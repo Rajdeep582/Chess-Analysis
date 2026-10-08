@@ -2424,7 +2424,7 @@ img.piece-svg {
 }
 
 /* ------------------------------------------------------------------ responsive */
-@media (max-width: 1179px) {
+@media (max-width: 1279px) {
   .analysis {
     grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
     gap: 14px;
@@ -2754,7 +2754,7 @@ img.piece-svg {
   scrollbar-gutter: stable;
 }
 
-@media (min-width: 900px) and (max-width: 1179px) {
+@media (min-width: 900px) and (max-width: 1279px) {
   .col-center {
     --board-size: max(300px, min(calc(100vh - 205px), calc(100vw - 400px)));
   }
@@ -3680,4 +3680,280 @@ img.piece-svg {
   font-size: 11px;
   color: var(--text-3);
   line-height: 1.35;
+}
+
+/* ==========================================================================
+   Phones & tablets
+   ========================================================================== */
+body {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.app-header {
+  padding-left: max(18px, env(safe-area-inset-left));
+  padding-right: max(18px, env(safe-area-inset-right));
+}
+
+/* move strip (shown under the board below 1180px) */
+.move-strip {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  width: calc(var(--board-size) + 32px);
+  max-width: 100%;
+  margin: 2px auto 0;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+}
+.move-strip::-webkit-scrollbar {
+  display: none;
+}
+.ms-move {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-weight: 700;
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.ms-move:first-child {
+  margin-left: 8px;
+}
+.ms-move:last-child {
+  margin-right: 8px;
+}
+.ms-num {
+  color: var(--text-3);
+  font-weight: 500;
+  font-size: 12px;
+}
+.ms-move.current {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.ms-move.current .ms-num {
+  color: inherit;
+}
+
+/* settings & modals never overflow the screen */
+.settings > section,
+.set-row,
+.set-control {
+  min-width: 0;
+}
+.piece-sets,
+.theme-swatches {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.modal-body {
+  overflow-x: hidden;
+}
+
+/* touch devices: bigger targets, no hover-only deck */
+@media (pointer: coarse) {
+  .mv {
+    min-height: 36px;
+  }
+  .eline-mv {
+    padding: 2px 5px;
+  }
+  .chip-btn {
+    height: 30px;
+    padding: 0 10px;
+  }
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+}
+@media (hover: none) {
+  .deck {
+    justify-content: flex-start;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding: 12px 4px 18px;
+    gap: 12px;
+    scrollbar-width: thin;
+  }
+  .deck-item,
+  .deck-item:hover ~ .deck-item,
+  .deck-item:focus-within ~ .deck-item {
+    margin-left: 0;
+    transform: none;
+    scroll-snap-align: start;
+  }
+  .deck-item:hover {
+    transform: none;
+  }
+}
+
+/* tablet portrait: leave room under the board for the strip, controls and part of the panel */
+@media (min-width: 600px) and (max-width: 899px) {
+  .col-center {
+    --board-size: min(calc(100% - 32px), calc(100vh - 360px), 720px);
+  }
+  .home-hero {
+    text-align: left;
+  }
+}
+
+/* phones */
+@media (max-width: 640px) {
+  .doc-title {
+    display: none;
+  }
+  .header-actions {
+    margin-left: auto;
+    gap: 0;
+  }
+  .hbtn,
+  .hbtn.icon-only {
+    padding: 0 7px;
+    height: 40px;
+  }
+  .col-center {
+    --board-size: min(calc(100% - 20px), calc(100vh - 230px));
+  }
+  .evalbar-label {
+    display: none;
+  }
+  .move-strip {
+    width: 100%;
+  }
+  .graph-card {
+    padding: 5px;
+  }
+  .settings {
+    gap: 0;
+  }
+  .set-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .set-control {
+    flex: 1 1 auto;
+  }
+  .set-control select {
+    max-width: 100%;
+  }
+  .legends-head {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .search-go {
+    flex: 1 1 100%;
+  }
+  .search-bar input {
+    font-size: 16px; /* avoids iOS zoom on focus */
+  }
+  .import-card textarea {
+    font-size: 16px;
+  }
+  .elo-value {
+    font-size: 28px;
+  }
+  .elo-cards {
+    gap: 6px;
+  }
+  .phase-table th {
+    font-size: 12px;
+  }
+  .hit {
+    padding: 10px 12px;
+  }
+  .toasts {
+    bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}
+@media (max-width: 380px) {
+  .hbtn,
+  .hbtn.icon-only {
+    padding: 0 5px;
+  }
+  .brand .logo-mark {
+    width: 26px;
+    height: 26px;
+  }
+  .elo-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* phone landscape: board left, panels right */
+@media (orientation: landscape) and (max-height: 540px) and (max-width: 1279px) {
+  .app-header {
+    height: 46px;
+  }
+  .analysis {
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 10px;
+    padding: 6px 10px 10px;
+    align-items: start;
+  }
+  .col-center {
+    --board-size: calc(100vh - 46px - 16px - 2 * 26px - 12px);
+    width: calc(var(--board-size) + 22px);
+    position: sticky;
+    top: 52px;
+  }
+  .col-center .graph-card,
+  .col-center .opening-line,
+  .col-center .variation-banner {
+    display: none;
+  }
+  .player-bar {
+    height: 26px;
+    font-size: 12px;
+  }
+  .evalbar {
+    width: 12px;
+  }
+  .evalbar-label {
+    display: none;
+  }
+  .col-center .move-strip,
+  .col-center .controls {
+    display: none;
+  }
+  .col-right {
+    position: static;
+    height: auto;
+    max-height: none;
+  }
+  .col-right::before {
+    content: none;
+  }
+}
+@media (orientation: landscape) and (max-height: 540px) and (max-width: 1279px) {
+  .col-right .landscape-tools {
+    display: flex;
+  }
+}
+.landscape-tools {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.landscape-tools .move-strip,
+.landscape-tools .controls,
+.landscape-tools .graph-card {
+  width: 100%;
+  margin: 0;
+  padding-left: 0;
+}
+.landscape-tools .graph-card {
+  padding: 5px;
 }

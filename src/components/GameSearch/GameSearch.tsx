@@ -164,7 +164,7 @@ export function GameSearch() {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Player, or “player vs player”, optional year — e.g. Hikaru vs MagnusCarlsen"
+          placeholder="e.g. Hikaru vs MagnusCarlsen"
           aria-label="Search games by player names"
           autoComplete="off"
           spellCheck={false}

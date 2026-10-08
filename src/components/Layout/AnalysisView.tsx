@@ -17,6 +17,7 @@ import { EnginePanel } from '../EnginePanel/EnginePanel';
 import { EvaluationBar } from '../EvaluationBar/EvaluationBar';
 import { EvaluationGraph, type GraphMarker } from '../EvaluationGraph/EvaluationGraph';
 import { MoveList } from '../MoveList/MoveList';
+import { MoveStrip } from '../MoveList/MoveStrip';
 import { ReviewPanel } from '../ReviewPanel/ReviewPanel';
 import { Icon } from '../common/Icon';
 
@@ -78,7 +79,7 @@ export function AnalysisView() {
   const panelTab = useApp((s) => s.panelTab);
   const book = useApp((s) => s.book);
   const engineOn = useApp((s) => s.engineOn);
-  const wide = useMediaQuery('(min-width: 1180px)');
+  const wide = useMediaQuery('(min-width: 1280px)');
   const info = useMemo(() => gameInfo(headers), [headers]);
 
   const node = tree.nodes[currentId];
@@ -162,7 +163,7 @@ export function AnalysisView() {
         markers={markers}
         showMarkers={reviewSettings.showGraphMarkers}
         onSelect={(ply) => c.goToPly(ply)}
-        height={wide ? 92 : 110}
+        height={wide ? 92 : 84}
       />
     </div>
   );
@@ -233,6 +234,7 @@ export function AnalysisView() {
           </div>
         </div>
         <PlayerBar color={bottom} name={nameOf(bottom)} rating={eloOf(bottom)} fen={boardFen} toMove={turn === bottom} />
+        {!wide && <MoveStrip />}
         {!wide && <AnalysisControls />}
         {!wide && opening && (
           <div className="opening-line small center">
@@ -259,6 +261,13 @@ export function AnalysisView() {
 
       <aside className="col-right" aria-label="Analysis panels">
         {wide && graph}
+        {!wide && (
+          <div className="landscape-tools">
+            <AnalysisControls />
+            <MoveStrip />
+            {graph}
+          </div>
+        )}
         <div className="tabs" role="tablist">
           {tabs.map((t) => (
             <button
