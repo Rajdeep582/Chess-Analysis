@@ -3957,3 +3957,52 @@ body {
 .landscape-tools .graph-card {
   padding: 5px;
 }
+
+/* ---------------------------------------------------------------- smooth board motion */
+.board.animated .piece {
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  backface-visibility: hidden;
+}
+.board.animated .piece.ghost {
+  transition: none;
+  animation: pieceOut 0.24s ease-out forwards;
+  pointer-events: none;
+  z-index: 0;
+}
+@keyframes pieceOut {
+  to {
+    opacity: 0;
+  }
+}
+.board:not(.animated) .piece.ghost {
+  display: none;
+}
+.board.animated .sq.last::before,
+.board.animated .sq.selected::before {
+  animation: hlIn 0.2s ease-out;
+}
+@keyframes hlIn {
+  from {
+    opacity: 0;
+  }
+}
+.board.animated .board-arrows .arrow {
+  animation: arrowIn 0.25s ease-out;
+}
+@keyframes arrowIn {
+  from {
+    opacity: 0;
+  }
+}
+.board.animated .piece.in-check .piece-svg {
+  transition: filter 0.2s ease-out;
+}
+
+.board.animated .piece:not(.ghost) {
+  animation: pieceIn 0.2s ease-out;
+}
+@keyframes pieceIn {
+  from {
+    opacity: 0;
+  }
+}

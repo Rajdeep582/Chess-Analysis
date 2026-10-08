@@ -33,7 +33,7 @@ export interface ChessBoardProps {
 
 const FILES = 'abcdefgh';
 
-function parsePieces(fen: string): { sq: string; color: Color; type: PieceSymbol }[] {
+export function parsePieces(fen: string): { sq: string; color: Color; type: PieceSymbol }[] {
   const out: { sq: string; color: Color; type: PieceSymbol }[] = [];
   const rows = fen.split(' ')[0].split('/');
   rows.forEach((row, ri) => {
@@ -61,30 +61,49 @@ function dist(a: string, b: string) {
 
 let pieceSeq = 1;
 
-/** Keeps stable ids for pieces across positions so moves can animate. */
-function assignIds(prev: PieceOnBoard[], next: { sq: string; color: Color; type: PieceSymbol }[]): PieceOnBoard[] {
+/**
+ * Keeps stable ids for pieces across positions so moves animate as real moves:
+ *  1. pieces on squares whose occupant did not change keep their id;
+ *  2. pieces that left a square are paired with same-colour/same-type pieces that appeared
+ *     elsewhere (nearest first) — this handles captures (incl. pawn takes pawn), castling and
+ *     stepping backwards; pawns may pair with a promoted piece on the last rank;
+ *  3. anything left over is new (fades in) or gone (fades out).
+ */
+export function assignIds(prev: PieceOnBoard[], next: { sq: string; color: Color; type: PieceSymbol }[]): { pieces: PieceOnBoard[]; gone: PieceOnBoard[] } {
+  const prevAt = new Map(prev.map((p) => [p.sq, p]));
   const out: (PieceOnBoard | null)[] = next.map(() => null);
   const used = new Set<string>();
+  // 1. unchanged squares
   next.forEach((p, i) => {
-    const same = prev.find((q) => !used.has(q.id) && q.sq === p.sq && q.color === p.color && q.type === p.type);
-    if (same) {
-      used.add(same.id);
-      out[i] = { ...p, id: same.id };
+    const q = prevAt.get(p.sq);
+    if (q && q.color === p.color && q.type === p.type) {
+      used.add(q.id);
+      out[i] = { ...p, id: q.id };
     }
   });
-  next.forEach((p, i) => {
-    if (out[i]) return;
-    let best: PieceOnBoard | null = null;
-    for (const q of prev) {
-      if (used.has(q.id) || q.color !== p.color || q.type !== p.type) continue;
-      if (!best || dist(q.sq, p.sq) < dist(best.sq, p.sq)) best = q;
+  const sources = prev.filter((q) => !used.has(q.id));
+  const pair = (allow: (q: PieceOnBoard, p: { sq: string; color: Color; type: PieceSymbol }) => boolean) => {
+    // Greedy by global shortest distance for stable, natural pairings.
+    const cand: { i: number; q: PieceOnBoard; d: number }[] = [];
+    next.forEach((p, i) => {
+      if (out[i]) return;
+      for (const q of sources) if (!used.has(q.id) && allow(q, p)) cand.push({ i, q, d: dist(q.sq, p.sq) });
+    });
+    cand.sort((a, b) => a.d - b.d);
+    for (const c of cand) {
+      if (out[c.i] || used.has(c.q.id)) continue;
+      used.add(c.q.id);
+      out[c.i] = { ...next[c.i], id: c.q.id };
     }
-    if (best) {
-      used.add(best.id);
-      out[i] = { ...p, id: best.id };
-    } else out[i] = { ...p, id: `p${pieceSeq++}` };
+  };
+  // 2. moved pieces, then promotions (pawn → piece on the last rank) and un-promotions.
+  pair((q, p) => q.color === p.color && q.type === p.type);
+  pair((q, p) => q.color === p.color && ((q.type === 'p' && /[18]/.test(p.sq[1])) || (p.type === 'p' && /[18]/.test(q.sq[1]))));
+  // 3. new pieces
+  next.forEach((p, i) => {
+    if (!out[i]) out[i] = { ...p, id: `p${pieceSeq++}` };
   });
-  return out as PieceOnBoard[];
+  return { pieces: out as PieceOnBoard[], gone: prev.filter((q) => !used.has(q.id)) };
 }
 
 function ChessBoardImpl(props: ChessBoardProps) {
@@ -123,11 +142,35 @@ function ChessBoardImpl(props: ChessBoardProps) {
   }, [fen]);
   const turn: Color = fen.split(' ')[1] === 'b' ? 'b' : 'w';
 
+  const dropped = useRef<string | null>(null);
+  const firstPaint = useRef(true);
+  const ghostsRef = useRef<PieceOnBoard[]>([]);
+  const [, setTick] = useState(0);
   const pieces = useMemo(() => {
-    const next = assignIds(prevPieces.current, parsePieces(fen));
+    const { pieces: next, gone } = assignIds(prevPieces.current, parsePieces(fen));
     prevPieces.current = next;
+    // Captured / removed pieces fade out on their square (rendered in the same frame, no flicker).
+    ghostsRef.current = firstPaint.current ? [] : gone;
+    firstPaint.current = false;
     return next;
   }, [fen]);
+  useEffect(() => {
+    if (!ghostsRef.current.length) return;
+    const t = setTimeout(() => {
+      ghostsRef.current = [];
+      setTick((n) => n + 1);
+    }, 260);
+    return () => clearTimeout(t);
+  }, [pieces]);
+  const ghosts = animate ? ghostsRef.current : [];
+  // A piece dropped by drag-and-drop should land instantly, not slide from the cursor.
+  useEffect(() => {
+    if (!dropped.current) return;
+    const id = requestAnimationFrame(() => {
+      dropped.current = null;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [pieces]);
 
   useEffect(() => {
     setSelected(null);
@@ -230,7 +273,10 @@ function ChessBoardImpl(props: ChessBoardProps) {
     if (!drag) return;
     const d = drag;
     setDrag(null);
-    if (d.moved && sq && sq !== d.from) tryMove(d.from, sq);
+    if (d.moved && sq && sq !== d.from) {
+      dropped.current = sq;
+      tryMove(d.from, sq);
+    }
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -318,13 +364,22 @@ function ChessBoardImpl(props: ChessBoardProps) {
                 transition: 'none',
                 zIndex: 10,
               }
-            : { transform: `translate(${x * 100}%, ${y * 100}%)` };
+            : { transform: `translate3d(${x * 100}%, ${y * 100}%, 0)` };
+          if (!dragging && dropped.current === p.sq) style.transition = 'none';
           return (
             <div
               key={p.id}
               className={`piece ${p.color}${p.type} ${checkSquare === p.sq && p.type === 'k' ? (checkState?.mate ? 'in-check mated' : 'in-check') : ''}`}
               style={style}
             >
+              <PieceSvg color={p.color} type={p.type} set={pieceSet} />
+            </div>
+          );
+        })}
+        {ghosts.map((p) => {
+          const [x, y] = sqXY(p.sq, orientation);
+          return (
+            <div key={`ghost-${p.id}`} className={`piece ghost ${p.color}${p.type}`} style={{ transform: `translate3d(${x * 100}%, ${y * 100}%, 0)` }}>
               <PieceSvg color={p.color} type={p.type} set={pieceSet} />
             </div>
           );
