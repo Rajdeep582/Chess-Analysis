@@ -658,6 +658,8 @@ export class AnalysisController {
         {
           book,
           engineName: this.engine.state.info?.name,
+          elo: { w: info.whiteElo, b: info.blackElo },
+          result: info.result,
           signal: abort.signal,
           onProgress: (p) => this.set({ reviewProgress: p }),
           onPartial: (r) => this.set({ review: r, evalHistory: { ...this.state.evalHistory, ...historyFromReview(r) } }),

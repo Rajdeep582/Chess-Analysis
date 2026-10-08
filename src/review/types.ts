@@ -141,9 +141,13 @@ export interface GameReview {
   improvementAreas: Record<Color, string[]>;
   /** Accuracy per game phase (null when the player made no moves in that phase). */
   phaseAccuracy?: Record<Color, PhaseAccuracy>;
+  /** Number of (non-forced) moves each player made in each phase. */
+  phaseMoves?: Record<Color, Record<'opening' | 'middlegame' | 'endgame', number>>;
   phases?: { middlegameStart: number | null; endgameStart: number | null };
   /** Approximate playing strength from accuracy (single-game estimate). */
   estimatedElo?: Record<Color, number | null>;
+  strength?: Record<Color, { elo: number; low: number; high: number; method: 'performance' | 'quality' } | null>;
+  acpl?: Record<Color, number | null>;
 }
 
 export interface PhaseAccuracy {

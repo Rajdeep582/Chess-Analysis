@@ -6,7 +6,7 @@ import { analysisExpectedWhite, ratingFactor } from '../engine/evalUtils';
 import type { AnalysisJob, AnalyzeOptions } from '../engine/StockfishManager';
 import type { AnalysisRequest, EngineAnalysis } from '../engine/types';
 import { aggregateAccuracy, moveAccuracyFromWin, volatilityWeights, winPercentWhite, type AccuracyInputMove } from './accuracy';
-import { estimateElo } from './elo';
+import { estimateStrength } from './elo';
 import { dividePhases, phaseOfPly, type GamePhase } from './phases';
 import { classifyMove, computeMetrics, type PreviousMoveInfo } from './classification';
 import { CLASS_LABEL, findCriticalMoments } from './criticalMoments';
@@ -85,7 +85,7 @@ export function buildReview(
   input: ReviewInput,
   analyses: EngineAnalysis[],
   settings: ReviewSettings,
-  opts: { book?: OpeningBook | null; engineName?: string } = {},
+  opts: { book?: OpeningBook | null; engineName?: string; elo?: { w?: number; b?: number }; result?: string } = {},
 ): GameReview {
   const t = settings.thresholds;
   const book = opts.book ?? null;
@@ -191,12 +191,42 @@ export function buildReview(
     b: aggregateAccuracy(accInputs.filter((x) => x.color === 'b')),
   };
   const phaseAcc = (c: Color, p: GamePhase) => aggregateAccuracy(accInputs.filter((x, i) => x.color === c && phases[i] === p));
+  const phaseCount = (c: Color, p: GamePhase) => accInputs.filter((x, i) => x.color === c && phases[i] === p && !x.forced).length;
+  const phaseMoves = {
+    w: { opening: phaseCount('w', 'opening'), middlegame: phaseCount('w', 'middlegame'), endgame: phaseCount('w', 'endgame') },
+    b: { opening: phaseCount('b', 'opening'), middlegame: phaseCount('b', 'middlegame'), endgame: phaseCount('b', 'endgame') },
+  };
   const phaseAccuracy = {
     w: { opening: phaseAcc('w', 'opening'), middlegame: phaseAcc('w', 'middlegame'), endgame: phaseAcc('w', 'endgame') },
     b: { opening: phaseAcc('b', 'opening'), middlegame: phaseAcc('b', 'middlegame'), endgame: phaseAcc('b', 'endgame') },
   };
   const countOf = (c: Color) => moves.filter((m) => m.color === c && !m.forced).length;
-  const estimatedElo = { w: estimateElo(accuracy.w, countOf('w')), b: estimateElo(accuracy.b, countOf('b')) };
+  // Average centipawn loss per side (cp clamped to ±1000; mates count as ±1000).
+  const cpOf = (a: EngineAnalysis) =>
+    a.terminal === 'checkmate' ? (a.winner === 'w' ? 1000 : -1000) : a.terminal ? 0 : a.mate !== null ? (a.mate > 0 ? 1000 : -1000) : Math.max(-1000, Math.min(1000, a.evaluation ?? 0));
+  const acplOf = (c: Color) => {
+    const l: number[] = [];
+    input.moves.forEach((mv, i) => {
+      if (mv.color !== c) return;
+      const sign = c === 'w' ? 1 : -1;
+      l.push(Math.max(0, sign * cpOf(analyses[i]) - sign * cpOf(analyses[i + 1])));
+    });
+    return l.length ? Math.round((l.reduce((s, v) => s + v, 0) / l.length) * 10) / 10 : null;
+  };
+  const acpl = { w: acplOf('w'), b: acplOf('b') };
+  const res = opts.result;
+  const resultScore = (c: Color) => (res === '1-0' ? (c === 'w' ? 1 : 0) : res === '0-1' ? (c === 'b' ? 1 : 0) : res === '1/2-1/2' ? 0.5 : undefined);
+  const strength = (c: Color) =>
+    estimateStrength({
+      accuracy: accuracy[c],
+      opponentAccuracy: accuracy[c === 'w' ? 'b' : 'w'],
+      acpl: acpl[c],
+      opponentRating: opts.elo?.[c === 'w' ? 'b' : 'w'],
+      score: resultScore(c),
+      moves: countOf(c),
+    });
+  const strengthEst = { w: strength('w'), b: strength('b') };
+  const estimatedElo = { w: strengthEst.w?.elo ?? null, b: strengthEst.b?.elo ?? null };
   const keyMoments = findCriticalMoments(moves);
   const positions = analyses.slice(0, input.moves.length + 1).map((a) => ({
     fen: a.fen,
@@ -221,10 +251,16 @@ export function buildReview(
     settings,
     engine: opts.engineName ?? 'Stockfish',
     summary: buildSummary(moves, accuracy, opening?.name),
-    improvementAreas: { w: improvementAreas(moves, phases, 'w'), b: improvementAreas(moves, phases, 'b') },
+    improvementAreas: {
+      w: improvementAreas(moves, phases, 'w', phaseAccuracy.w, phaseMoves.w),
+      b: improvementAreas(moves, phases, 'b', phaseAccuracy.b, phaseMoves.b),
+    },
     phaseAccuracy,
+    phaseMoves,
     phases: division,
     estimatedElo,
+    strength: strengthEst,
+    acpl,
   };
 }
 
@@ -244,17 +280,27 @@ function buildSummary(moves: MoveReview[], acc: GameReview['accuracy'], opening?
   return out;
 }
 
-function improvementAreas(moves: MoveReview[], phases: GamePhase[], color: Color): string[] {
+function improvementAreas(
+  moves: MoveReview[],
+  phases: GamePhase[],
+  color: Color,
+  phaseAcc?: Record<GamePhase, number | null>,
+  phaseN?: Record<GamePhase, number>,
+): string[] {
   const out: string[] = [];
   const own = moves.map((m, i) => ({ m, phase: phases[i] })).filter((x) => x.m.color === color && !x.m.forced);
   if (!own.length) return out;
   const byPhase: Record<GamePhase, number[]> = { opening: [], middlegame: [], endgame: [] };
   for (const x of own) byPhase[x.phase].push(x.m.accuracy);
   const avg = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
-  const scored = (Object.keys(byPhase) as GamePhase[]).filter((p) => byPhase[p].length >= 3).map((p) => ({ p, v: avg(byPhase[p]) }));
+  // Same phase accuracies as the "Accuracy by phase" table, so the two always agree.
+  const scored = (Object.keys(byPhase) as GamePhase[])
+    .filter((p) => (phaseN?.[p] ?? byPhase[p].length) >= 3)
+    .map((p) => ({ p, v: phaseAcc?.[p] ?? avg(byPhase[p]), n: phaseN?.[p] ?? byPhase[p].length }))
+    .filter((x) => x.v !== null) as { p: GamePhase; v: number; n: number }[];
   if (scored.length > 1) {
     const low = scored.sort((a, b) => a.v - b.v)[0];
-    out.push(`Lowest move accuracy in the ${low.p} (${low.v.toFixed(0)}% over ${byPhase[low.p].length} moves).`);
+    out.push(`Lowest accuracy in the ${low.p} (${low.v.toFixed(1)}% over ${low.n} moves).`);
   }
   const count = (c: MoveClassification) => own.filter((x) => x.m.classification === c).length;
   const misses = count('miss');
@@ -291,7 +337,7 @@ export async function runReview(
   engine: EngineLike,
   input: ReviewInput,
   settings: ReviewSettings,
-  opts: { book?: OpeningBook | null; engineName?: string; onProgress?: (p: ReviewProgress) => void; signal?: AbortSignal; onPartial?: (r: GameReview) => void },
+  opts: { book?: OpeningBook | null; engineName?: string; elo?: { w?: number; b?: number }; result?: string; onProgress?: (p: ReviewProgress) => void; signal?: AbortSignal; onPartial?: (r: GameReview) => void },
 ): Promise<GameReview> {
   const group = 'review';
   const fens = [input.startFen, ...input.moves.map((m) => m.fenAfter)];

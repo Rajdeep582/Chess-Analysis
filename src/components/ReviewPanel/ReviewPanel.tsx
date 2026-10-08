@@ -360,7 +360,10 @@ function ReviewPanelImpl() {
             <h4>Estimated playing strength</h4>
             <div className="elo-cards">
               {(['w', 'b'] as const).map((col) => {
-                const elo = review.estimatedElo![col];
+                const st = review.strength?.[col] ?? null;
+                const elo = st?.elo ?? review.estimatedElo![col];
+                const oppElo = col === 'w' ? info.blackElo : info.whiteElo;
+                const acpl = review.acpl?.[col];
                 return (
                   <div key={col} className={`elo-card side-${col}`}>
                     <div className="elo-who">
@@ -369,12 +372,26 @@ function ReviewPanelImpl() {
                     </div>
                     <div className="elo-caption">Played like</div>
                     <div className="elo-value">{elo ?? '—'}</div>
+                    {st && (
+                      <div className="elo-range">
+                        {st.low}–{st.high}
+                      </div>
+                    )}
                     <div className="elo-band">{elo ? eloBand(elo) : 'Too few moves'}</div>
+                    <div className="elo-basis">
+                      {st?.method === 'performance' && oppElo
+                        ? `vs ${oppElo}-rated opponent · ${review.accuracy[col]?.toFixed(1) ?? '—'}% accuracy`
+                        : `${review.accuracy[col]?.toFixed(1) ?? '—'}% accuracy${acpl !== null && acpl !== undefined ? ` · ${Math.round(acpl)} avg cp loss` : ''}`}
+                    </div>
                   </div>
                 );
               })}
             </div>
-            <p className="muted tiny estimate-note">Single-game estimate from accuracy — not an official rating.</p>
+            <p className="muted tiny estimate-note">
+              {review.strength?.w?.method === 'performance' || review.strength?.b?.method === 'performance'
+                ? 'Performance estimate: opponent rating + result + accuracy relative to that level. Calibrated on 530 rated Chess.com player-games (typical error ≈ 70 Elo).'
+                : 'No ratings in the PGN, so this uses accuracy and centipawn loss only — a rough estimate (typical error ≈ 200 Elo, wide range).'}
+            </p>
           </>
         )}
         {review.phaseAccuracy && (
@@ -396,14 +413,20 @@ function ReviewPanelImpl() {
                     <th scope="row">{ph === 'opening' ? 'Opening' : ph === 'middlegame' ? 'Middlegame' : 'Endgame'}</th>
                     {(['w', 'b'] as const).map((col) => {
                       const v = review.phaseAccuracy![col][ph];
+                      const n = review.phaseMoves?.[col][ph];
                       return (
                         <td key={col}>
                           {v === null ? (
                             <div className="phase-cell na">—</div>
                           ) : (
-                            <div className="phase-cell" style={{ ['--pc' as string]: phaseColor(v) }}>
+                            <div
+                              className={`phase-cell ${n !== undefined && n < 3 ? 'few' : ''}`}
+                              style={{ ['--pc' as string]: phaseColor(v) }}
+                              title={n !== undefined ? `${n} move${n === 1 ? '' : 's'} in this phase` : undefined}
+                            >
                               <i style={{ width: `${v}%` }} />
                               <b>{v.toFixed(1)}</b>
+                              {n !== undefined && <small>{n}</small>}
                             </div>
                           )}
                         </td>

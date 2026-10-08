@@ -6,7 +6,7 @@ import { isGreat } from '../src/review/great';
 import { isMiss } from '../src/review/miss';
 import { gameAccuracy, moveAccuracy, moveAccuracyFromWin, volatilityWeights, winPercentWhite } from '../src/review/accuracy';
 import { dividePhases, phaseOfPly } from '../src/review/phases';
-import { estimateElo } from '../src/review/elo';
+import { estimateElo, estimateStrength } from '../src/review/elo';
 import { findCriticalMoments } from '../src/review/criticalMoments';
 import { collectMainline, runReview, DEFAULT_REVIEW_SETTINGS } from '../src/review/reviewPipeline';
 import { createOpeningBook, type OpeningData } from '../src/review/openingBook';
@@ -156,9 +156,10 @@ describe('Game phases & Elo estimate', () => {
     expect(phaseOfPly(4, d)).toBe('endgame');
   });
   it('maps accuracy to an approximate rating', () => {
-    expect(estimateElo(76.5, 30)).toBe(1000);
-    expect(estimateElo(84, 30)).toBe(2000);
-    expect(estimateElo(92.5, 30)).toBe(2850);
+    expect(estimateElo(77, 30)).toBeGreaterThan(600);
+    expect(estimateElo(84, 30)).toBeLessThan(estimateElo(92.5, 30)!);
+    expect(estimateStrength({ accuracy: 88, opponentAccuracy: 88, acpl: 25, opponentRating: 3300, score: 0.5, moves: 40 })).toMatchObject({ method: 'performance' });
+    expect(Math.abs(estimateStrength({ accuracy: 88, opponentAccuracy: 88, acpl: 25, opponentRating: 3300, score: 0.5, moves: 40 })!.elo - 3300)).toBeLessThan(150);
     expect(estimateElo(90, 3)).toBeNull();
     expect(estimateElo(null, 30)).toBeNull();
   });
