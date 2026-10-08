@@ -1,0 +1,79 @@
+import { gameInfo } from '../chess/pgn';
+import type { PgnHeaders } from '../chess/types';
+import { CLASS_LABEL } from '../review/criticalMoments';
+import { CLASSIFICATION_ORDER, type GameReview } from '../review/types';
+
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+const COLORS: Record<string, string> = {
+  brilliant: '#14b8c8',
+  great: '#5b7cfa',
+  best: '#2fae7d',
+  excellent: '#6fb35a',
+  good: '#8d9a76',
+  book: '#b08458',
+  inaccuracy: '#d9a520',
+  mistake: '#e07a2e',
+  miss: '#d6517f',
+  blunder: '#d93b40',
+};
+
+/** Standalone, printable HTML review report (no external resources). */
+export function buildReportHtml(o: { title: string; headers: PgnHeaders; review: GameReview; pgn: string }): string {
+  const info = gameInfo(o.headers);
+  const r = o.review;
+  const W = 760;
+  const H = 160;
+  const n = Math.max(1, r.positions.length - 1);
+  const pts = r.positions.map((p, i) => `${((i / n) * W).toFixed(1)},${((1 - p.ep) * H).toFixed(1)}`).join(' ');
+  const markers = r.moves
+    .filter((m) => ['brilliant', 'great', 'miss', 'mistake', 'blunder'].includes(m.classification))
+    .map((m) => {
+      const p = r.positions[m.ply - r.moves[0].ply + 1];
+      if (!p) return '';
+      const x = (((m.ply - r.moves[0].ply + 1) / n) * W).toFixed(1);
+      const y = ((1 - p.ep) * H).toFixed(1);
+      return `<circle cx="${x}" cy="${y}" r="4" fill="${COLORS[m.classification]}" stroke="#fff" stroke-width="1.5"/>`;
+    })
+    .join('');
+  const acc = (v: number | null) => (v === null ? '—' : v.toFixed(1));
+  const rows = CLASSIFICATION_ORDER.map(
+    (c) => `<tr><td><span class="dot" style="background:${COLORS[c]}"></span>${CLASS_LABEL[c]}</td><td>${r.stats.w[c]}</td><td>${r.stats.b[c]}</td></tr>`,
+  ).join('');
+  const moments = r.keyMoments
+    .map((k) => {
+      const mv = r.moves.find((m) => m.nodeId === k.nodeId);
+      return `<li><b>${k.moveNumber}${k.color === 'w' ? '.' : '…'} ${esc(k.san)}</b> — <span style="color:${COLORS[k.classification]}">${esc(k.title)}</span> (${esc(k.evalBefore)} → ${esc(k.evalAfter)})${
+        mv?.explanation ? `<div class="ex">${esc(mv.explanation).replace(/\n/g, '<br>')}</div>` : ''
+      }</li>`;
+    })
+    .join('');
+  const improve = (['w', 'b'] as const)
+    .map((c) => `<div><h3>${c === 'w' ? esc(info.white) : esc(info.black)}</h3><ul>${r.improvementAreas[c].map((x) => `<li>${esc(x)}</li>`).join('') || '<li>—</li>'}</ul></div>`)
+    .join('');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(o.title)} — Game review</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:820px;margin:32px auto;padding:0 16px;color:#1c2129;background:#fff}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 10px;border-bottom:1px solid #e3e6ea;padding-bottom:6px}h3{font-size:14px;margin:8px 0}
+.meta{color:#5d6672;font-size:13px}.acc{display:flex;gap:16px;margin-top:16px}.acc div{flex:1;border:1px solid #e3e6ea;border-radius:10px;padding:12px 16px}
+.acc b{font-size:28px;display:block}table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:5px 8px;border-bottom:1px solid #eef0f2;text-align:left}
+td+td,th+th{text-align:right}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px}
+ul{padding-left:18px}li{margin:6px 0;font-size:13.5px}.ex{color:#4b5562;font-size:12.5px;margin-top:3px;white-space:normal}
+pre{white-space:pre-wrap;font-size:12px;background:#f5f6f8;padding:12px;border-radius:8px}.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+svg{width:100%;height:auto;border:1px solid #e3e6ea;border-radius:8px}footer{margin-top:32px;font-size:11px;color:#7a838e}
+@media print{body{margin:0}}
+</style></head><body>
+<h1>${esc(o.title)}</h1>
+<div class="meta">${esc(info.white)} vs ${esc(info.black)} · ${esc(info.result)}${info.event ? ` · ${esc(info.event)}` : ''}${info.date ? ` · ${esc(info.date)}` : ''}${r.opening ? ` · ${esc(r.opening.eco)} ${esc(r.opening.name)}` : ''}</div>
+<div class="acc"><div>White accuracy<b>${acc(r.accuracy.w)}</b></div><div>Black accuracy<b>${acc(r.accuracy.b)}</b></div></div>
+<h2>Evaluation</h2>
+<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><rect width="${W}" height="${H}" fill="#2a2f38"/><polygon points="0,${H} ${pts} ${W},${H}" fill="#f1efe9"/><line x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}" stroke="#8a919b" stroke-dasharray="4 4"/>${markers}</svg>
+<h2>Summary</h2><ul>${r.summary.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>
+<h2>Move classifications</h2><table><tr><th></th><th>White</th><th>Black</th></tr>${rows}</table>
+<h2>Key moments</h2><ul>${moments || '<li>No critical moments.</li>'}</ul>
+<h2>Improvement areas</h2><div class="cols">${improve}</div>
+<h2>PGN</h2><pre>${esc(o.pgn)}</pre>
+<footer>Generated by Outpost (local analysis with ${esc(r.engine)}). Classifications use an independent expected-points model; depth ${r.settings.quickDepth}/${r.settings.deepDepth}.</footer>
+</body></html>`;
+}

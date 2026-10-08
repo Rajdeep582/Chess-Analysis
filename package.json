@@ -1,0 +1,45 @@
+{
+  "name": "outpost-chess-analysis",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Frontend-only chess analysis lab powered by Stockfish WASM in the browser.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/copy-engine.mjs",
+    "predev": "node scripts/copy-engine.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/copy-engine.mjs",
+    "build": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.sw.json && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.sw.json",
+    "build:openings": "node scripts/build-openings.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "chess.js": "^1.4.0",
+    "idb": "^8.0.4",
+    "lz-string": "^1.5.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "stockfish": "^19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^29.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.3",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.0.3",
+    "workbox-core": "^7.4.1",
+    "workbox-precaching": "^7.4.1"
+  }
+}
