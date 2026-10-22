@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Outpost — original visual identity
+   Nocturne64 — original visual identity
    Ink-graphite surfaces, amber signal accent, cool engine blue.
    ========================================================================== */
 
@@ -136,6 +136,12 @@ kbd {
 
 .sr-only {
   position: absolute;
+  /* pinned to the corner so a hidden label deep inside a scroll panel can never stretch the page */
+  top: 0;
+  left: 0;
+  margin: -1px;
+  padding: 0;
+  border: 0;
   width: 1px;
   height: 1px;
   overflow: hidden;
@@ -1015,9 +1021,6 @@ kbd {
   width: 12.5%;
   height: 12.5%;
   will-change: transform;
-}
-.board.animated .piece {
-  transition: transform 0.19s cubic-bezier(0.25, 0.8, 0.3, 1);
 }
 .piece .piece-svg {
   width: 100%;
@@ -2734,10 +2737,6 @@ img.piece-svg {
   }
 }
 
-/* smoother piece motion; no transition while dragging or on first paint */
-.board.animated .piece {
-  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
 .board.dragging .piece {
   transition: none;
 }
@@ -3959,8 +3958,9 @@ body {
 }
 
 /* ---------------------------------------------------------------- smooth board motion */
-.board.animated .piece {
-  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+/* piece motion runs through the Web Animations API (ChessBoard.tsx), not CSS transitions */
+.piece {
+  transition: none;
   backface-visibility: hidden;
 }
 .board.animated .piece.ghost {
@@ -3989,6 +3989,10 @@ body {
 .board.animated .board-arrows .arrow {
   animation: arrowIn 0.25s ease-out;
 }
+/* soft lift so arrows read on both square colours */
+.board-arrows .arrow path {
+  filter: drop-shadow(0 0.02px 0.04px rgba(0, 0, 0, 0.35));
+}
 @keyframes arrowIn {
   from {
     opacity: 0;
@@ -4004,5 +4008,429 @@ body {
 @keyframes pieceIn {
   from {
     opacity: 0;
+  }
+}
+
+/* ==========================================================================
+   No horizontal scrolling anywhere
+   ========================================================================== */
+html,
+body {
+  /* clip (not hidden): content can never be scrolled sideways, even programmatically */
+  overflow-x: clip;
+  max-width: 100%;
+}
+html {
+  /* reserve the vertical scrollbar's space so the layout never shifts sideways when it appears */
+  scrollbar-gutter: stable;
+}
+#root {
+  overflow-x: clip;
+}
+
+/* move strip: wraps onto rows instead of sliding sideways */
+.move-strip {
+  flex-wrap: wrap;
+  align-content: flex-start;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  max-height: calc(3 * 30px + 2 * 2px + 10px);
+  -webkit-mask-image: none;
+  mask-image: none;
+  padding: 5px;
+}
+.move-strip .ms-move {
+  height: 30px;
+  padding: 0 8px;
+}
+.move-strip .ms-move:first-child,
+.move-strip .ms-move:last-child {
+  margin: 0;
+}
+
+/* legendary deck on narrow / touch screens: grid, no sideways scroller */
+@media (max-width: 899px), (hover: none) {
+  .deck {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr));
+    gap: 12px;
+    overflow: visible;
+    scroll-snap-type: none;
+    padding: 12px 0 18px;
+  }
+  .deck-item,
+  .deck-item:hover ~ .deck-item,
+  .deck-item:focus-within ~ .deck-item {
+    margin-left: 0;
+    transform: none;
+  }
+  .deck-card {
+    width: 100%;
+    height: 100%;
+  }
+}
+
+/* ---------------------------------------------------------------- premium board feel */
+.board.animated .board-arrows .arrow {
+  transition: opacity 0.25s ease;
+}
+.board-arrows .arrow path {
+  transition: fill 0.25s ease;
+}
+/* piece lifted by hand: larger soft shadow, above everything */
+.piece.lifted {
+  z-index: 10;
+  cursor: grabbing;
+}
+.piece.lifted .piece-svg {
+  filter: drop-shadow(0 7px 7px rgba(0, 0, 0, 0.32)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.22));
+}
+/* target square while dragging */
+.sq.drag-over {
+  box-shadow: inset 0 0 0 max(3px, calc(var(--board-size, 560px) / 150)) rgba(255, 255, 255, 0.65);
+}
+.board.interactive .piece {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------------------------------------------------------------- engine panel: no layout jumps */
+.depth-progress {
+  transition: opacity 0.35s ease;
+}
+.depth-progress.idle {
+  opacity: 0;
+}
+.depth-progress.idle span {
+  transition: none;
+}
+/* every line is exactly two rows of moves + the action row, whether the PV is short or long */
+.eline-moves {
+  height: 3.4em;
+  max-height: none;
+  align-content: flex-start;
+}
+.eline.skeleton {
+  height: 88px;
+  align-content: start;
+}
+/* graph placeholder: readable, never crossed by the midline */
+.graph-empty {
+  z-index: 1;
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  white-space: normal;
+  line-height: 1.45;
+  text-wrap: balance;
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------- polished form controls */
+html {
+  background: var(--bg);
+}
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 32px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b93a3' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+select:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-strong));
+}
+select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+/* thin, quiet scrollbars inside panels */
+.tab-body,
+.moves-card,
+.mv-scroll,
+.modal-body,
+.move-strip,
+.col-right {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-3) 45%, transparent) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-3) 38%, transparent);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--text-3) 60%, transparent);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------- tactile micro-interactions */
+.icon-btn,
+.chip-btn,
+.mv,
+.ms-move,
+.eline-mv,
+.seg button,
+.stepper button,
+.tab,
+.link-btn {
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.08s ease;
+}
+.icon-btn:active:not(:disabled),
+.chip-btn:active:not(:disabled),
+.seg button:active:not(:disabled),
+.stepper button:active:not(:disabled),
+.link-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.btn.primary:hover:not(:disabled) {
+  box-shadow: 0 6px 18px -8px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+/* numbers never jitter in width while they update */
+.engine-eval,
+.engine-stats dd,
+.eline-score,
+.evalbar-label,
+.acc-value,
+.elo-value,
+.phase-table td {
+  font-variant-numeric: tabular-nums;
+}
+/* engine status stays on one line (no header growth while loading) */
+.engine-id > div {
+  min-width: 0;
+}
+.engine-status {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ==========================================================================
+   Responsive pass — phones & tablets (desktop ≥1280px unchanged)
+   ========================================================================== */
+
+/* Touch: every control gets a ≥40px hit area without changing how it looks. */
+@media (pointer: coarse) {
+  .switch,
+  .chip-btn,
+  .stepper button,
+  .example-chip,
+  .icon-btn.tiny,
+  .help-dot {
+    position: relative;
+  }
+  .switch::after,
+  .chip-btn::after,
+  .stepper button::after,
+  .example-chip::after,
+  .icon-btn.tiny::after,
+  .help-dot::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+  }
+  .example-chip {
+    padding: 7px 13px;
+  }
+  .stepper button {
+    width: 32px;
+    height: 32px;
+  }
+  .eline-actions .chip-btn {
+    min-height: 30px;
+  }
+  /* bigger tap padding horizontally only, so two rows of moves still fit their fixed height */
+  .eline-mv {
+    padding: 0 5px;
+  }
+}
+
+/* The empty evaluation graph is only a hint; on smaller screens it would push the engine below the fold. */
+@media (max-width: 1279px) {
+  .graph-card:has(.graph-empty) {
+    display: none;
+  }
+}
+
+/* ---------- tablet landscape (iPad / Android tablets turned sideways) ----------
+   Board on the left at full height, everything else in the right column (controls + moves on top,
+   then the tabs), so nothing important sits below the fold. */
+@media (min-width: 900px) and (max-width: 1279px) and (orientation: landscape) and (min-height: 541px) {
+  .analysis {
+    grid-template-columns: max-content minmax(300px, 1fr);
+    max-width: 1280px;
+    gap: 14px;
+  }
+  .col-center {
+    --board-size: max(320px, min(calc(100vh - 152px), calc(100vw - 440px)));
+    width: calc(var(--board-size) + 32px);
+  }
+  .col-center .move-strip,
+  .col-center .controls,
+  .col-center .opening-line,
+  .col-center .graph-card {
+    display: none;
+  }
+  .col-right .landscape-tools {
+    display: flex;
+  }
+  .col-right {
+    max-width: 460px;
+  }
+  .landscape-tools .move-strip {
+    max-height: calc(4 * 30px + 3 * 2px + 10px);
+  }
+}
+
+/* ---------- tablet portrait ---------- */
+@media (min-width: 600px) and (max-width: 899px) and (orientation: portrait) {
+  .col-center {
+    /* keep the move strip, controls and the top of the engine panel visible under the board */
+    --board-size: min(calc(100% - 32px), calc(100vh - 420px), 720px);
+    margin: 0 auto;
+  }
+  .analysis {
+    padding: 10px 20px 28px;
+  }
+  .col-right {
+    max-width: 760px;
+    width: 100%;
+    margin: 0 auto;
+  }
+}
+/* large tablets in portrait (iPad Air/Pro): one column like smaller tablets — a big board on top,
+   the move strip and controls under it, then the panels at full width (no half-empty side column). */
+@media (min-width: 900px) and (max-width: 1279px) and (orientation: portrait) {
+  .analysis {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px 24px 28px;
+  }
+  .col-center {
+    --board-size: min(calc(100% - 32px), calc(100vh - 430px), 860px);
+    width: auto;
+    margin: 0 auto;
+  }
+  .col-center .board-area,
+  .col-center .player-bar,
+  .col-center .move-strip,
+  .col-center .controls,
+  .col-center .opening-line {
+    width: calc(var(--board-size) + 32px);
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .col-right {
+    position: static;
+    height: auto;
+    max-height: none;
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .tab-body {
+    overflow: visible;
+  }
+  .engine-lines {
+    min-height: 0;
+  }
+}
+
+/* ---------- phones (portrait) ---------- */
+@media (max-width: 640px) {
+  .home-hero h1 {
+    font-size: clamp(28px, 9vw, 40px);
+    letter-spacing: -0.035em;
+  }
+  .hero-sub {
+    font-size: 14.5px;
+  }
+  .home {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .import-head {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .tabs button {
+    height: 40px;
+  }
+  .modal-body {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+  /* settings rows: label above control when space is tight */
+  .set-row {
+    align-items: center;
+  }
+}
+@media (max-width: 360px) {
+  .home-hero h1 {
+    font-size: 25px;
+  }
+  .hero-points li {
+    font-size: 12.5px;
+  }
+  .ctl {
+    width: 34px;
+  }
+  .controls > .ctl {
+    width: 38px;
+  }
+}
+
+/* ---------- phones (landscape) ---------- */
+@media (orientation: landscape) and (max-height: 540px) and (max-width: 1279px) {
+  .doc-title,
+  .hlabel,
+  .brand-sub {
+    display: none;
+  }
+  .header-actions {
+    margin-left: auto;
+  }
+  .brand-name {
+    font-size: 15px;
+  }
+  .modal,
+  .modal.wide {
+    max-height: calc(100vh - 16px);
+  }
+}
+
+/* Mobile browsers: size the board against the *visible* viewport (dvh excludes the URL bar). */
+@supports (height: 100dvh) {
+  @media (orientation: landscape) and (max-height: 540px) and (max-width: 1279px) {
+    .col-center {
+      --board-size: calc(100dvh - 46px - 16px - 2 * 26px - 12px);
+    }
+  }
+  @media (min-width: 900px) and (max-width: 1279px) and (orientation: landscape) and (min-height: 541px) {
+    .col-center {
+      --board-size: max(320px, min(calc(100dvh - 152px), calc(100vw - 440px)));
+    }
+  }
+  @media (min-width: 600px) and (max-width: 899px) and (orientation: portrait) {
+    .col-center {
+      --board-size: min(calc(100% - 32px), calc(100dvh - 420px), 720px);
+    }
   }
 }

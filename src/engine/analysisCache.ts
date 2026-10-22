@@ -36,6 +36,12 @@ function adapt(a: EngineAnalysis, fen: string, multipv: number): EngineAnalysis 
  * depth ≤ stored depth and MultiPV ≤ stored MultiPV.
  */
 export class AnalysisCache {
+  /** Prefix that separates results of different engine builds (lite vs full net). */
+  namespace = '';
+  private k(fen: string): string {
+    return this.namespace + fenKey(fen);
+  }
+
   private mem = new Map<string, EngineAnalysis[]>();
   private writes = 0;
   enabled = true;
@@ -48,7 +54,7 @@ export class AnalysisCache {
 
   getSync(fen: string, depth: number, multipv: number): EngineAnalysis | null {
     if (!this.enabled) return null;
-    const k = fenKey(fen);
+    const k = this.k(fen);
     const list = this.mem.get(k);
     if (!list) return null;
     const hit = list.find((a) => satisfies(a, depth, multipv));
@@ -60,7 +66,7 @@ export class AnalysisCache {
 
   /** Best (deepest) cached analysis for a position regardless of depth, for previews. */
   peekBest(fen: string): EngineAnalysis | null {
-    const list = this.mem.get(fenKey(fen));
+    const list = this.mem.get(this.k(fen));
     if (!list?.length) return null;
     const best = [...list].sort((a, b) => b.depth - a.depth)[0];
     return { ...best, fen, source: 'cache' };
@@ -71,7 +77,7 @@ export class AnalysisCache {
     const hit = this.getSync(fen, depth, multipv);
     if (hit || !this.persistence) return hit;
     try {
-      const rec = await this.persistence.get(fenKey(fen));
+      const rec = await this.persistence.get(this.k(fen));
       if (!rec) return null;
       for (const a of rec.analyses) this.remember(a, false);
       const found = rec.analyses.find((a) => satisfies(a, depth, multipv));
@@ -87,7 +93,7 @@ export class AnalysisCache {
   }
 
   private remember(a: EngineAnalysis, persist: boolean): void {
-    const k = fenKey(a.fen);
+    const k = this.k(a.fen);
     let list = this.mem.get(k) ?? [];
     // Drop entries dominated by the new one.
     list = list.filter((x) => !(x.depth <= a.depth && x.multipv <= a.multipv));

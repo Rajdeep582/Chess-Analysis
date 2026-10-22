@@ -39,6 +39,11 @@ function Shell() {
     document.documentElement.classList.toggle('reduce-motion', reduce);
   }, [reduce]);
 
+  const title = useApp((s) => s.title);
+  useEffect(() => {
+    document.title = view === 'analysis' && title ? `${title} · Nocturne64` : 'Nocturne64 — Chess Analysis Lab';
+  }, [view, title]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -67,6 +72,8 @@ function Shell() {
           c.last();
           break;
         case ' ':
+          // Space on a focused button/link activates that control instead.
+          if ((e.target as HTMLElement | null)?.closest?.('button, a, [role="button"], [role="switch"], [role="radio"]')) return;
           c.toggleAutoplay();
           break;
         case 'f':
@@ -116,9 +123,15 @@ export default function App() {
   const controller = useMemo(() => new AnalysisController(), []);
   useEffect(() => {
     // Debug handle for automated browser tests (?debug in the URL).
-    if (new URLSearchParams(window.location.search).has('debug')) (window as unknown as { __outpost: AnalysisController }).__outpost = controller;
+    if (new URLSearchParams(window.location.search).has('debug')) (window as unknown as { __nocturne64: AnalysisController }).__nocturne64 = controller;
     controller.init();
-    return () => controller.engine.dispose();
+    // React StrictMode (dev) runs effects twice: mount → cleanup → mount. Defer the dispose so that
+    // simulated cleanup doesn't kill the engine worker; a real unmount still disposes it.
+    const w = window as unknown as { __nocturne64Dispose?: number };
+    clearTimeout(w.__nocturne64Dispose);
+    return () => {
+      w.__nocturne64Dispose = window.setTimeout(() => controller.engine.dispose(), 0);
+    };
   }, [controller]);
   return (
     <ControllerContext.Provider value={controller}>

@@ -10,7 +10,15 @@ import { HelpDot } from '../common/Tooltip';
 const DEPTH_HELP =
   'Depth is the engine’s search iteration (counted in plies, with selective extensions and pruning). It is not literally the number of moves it looks ahead. Each extra level costs roughly 1.5–2× more time; deeper results are more reliable.';
 
-function LineRow({ fen, line, index, onPlayTo, onHover, onApply, onPlayLine }: {
+function LineRow({
+  fen,
+  line,
+  index,
+  onPlayTo,
+  onHover,
+  onApply,
+  onPlayLine,
+}: {
   fen: string;
   line: EngineAnalysis['lines'][number];
   index: number;
@@ -71,6 +79,8 @@ function EnginePanelImpl() {
   const fen = useApp((s) => s.tree.nodes[s.currentId].fen);
   const live = useApp((s) => s.live);
   const settings = useApp((s) => s.settings.engine);
+  // Number of line slots actually searched (low-power mode caps MultiPV at 2).
+  const lineSlots = useApp((s) => (s.settings.performance.lowPower ? Math.min(2, s.settings.engine.multipv) : s.settings.engine.multipv));
   const lowPower = useApp((s) => s.settings.performance.lowPower);
   const reviewing = useApp((s) => !!s.reviewProgress);
   const retryHidden = useApp((s) => !!s.retry && s.retry.status !== 'correct' && !s.retry.revealed);
@@ -80,11 +90,23 @@ function EnginePanelImpl() {
   const targetDepth = settings.mode === 'depth' ? (lowPower ? Math.min(16, settings.depth) : settings.depth) : null;
 
   const setPreset = (preset: DepthPreset) =>
-    c.updateSettings((s) => ({ ...s, engine: { ...s.engine, preset, depth: preset === 'custom' ? s.engine.depth : DEPTH_PRESETS[preset].depth, mode: 'depth' } }));
-  const setMultipv = (v: number) => c.updateSettings((s) => ({ ...s, engine: { ...s.engine, multipv: Math.min(5, Math.max(1, v)) } }));
+    c.updateSettings((s) => ({
+      ...s,
+      engine: {
+        ...s.engine,
+        preset,
+        depth: preset === 'custom' ? s.engine.depth : DEPTH_PRESETS[preset].depth,
+        mode: 'depth',
+      },
+    }));
+  const setMultipv = (v: number) =>
+    c.updateSettings((s) => ({
+      ...s,
+      engine: { ...s.engine, multipv: Math.min(5, Math.max(1, v)) },
+    }));
 
   let status: string;
-  if (engine.status === 'loading') status = 'Loading engine…';
+  if (engine.status === 'loading') status = c.engine.activeFlavor?.startsWith('full') ? 'Loading full engine (100 MB, first time only)…' : 'Loading engine…';
   else if (engine.status === 'error') status = 'Engine unavailable';
   else if (!engineOn) status = 'Paused';
   else if (reviewing) status = 'Busy with game review';
@@ -107,7 +129,7 @@ function EnginePanelImpl() {
               {engine.info && engine.status !== 'error' && (
                 <span className="muted">
                   {' '}
-                  · WASM{engine.info.flavor === 'lite-multi' ? ' MT' : ''} · {engine.info.threads}T · {engine.info.hashMb} MB
+                  · WASM{engine.info.flavor.endsWith('-multi') ? ' MT' : ''} · {engine.info.threads}T · {engine.info.hashMb} MB
                 </span>
               )}
             </div>
@@ -143,7 +165,9 @@ function EnginePanelImpl() {
       ) : (
         <>
           <div className="engine-readout">
-            <div className={`engine-eval ${analysis ? '' : 'pending'}`}>{analysis ? formatAnalysisEval(analysis) : engineOn && engine.status !== 'error' ? '…' : '—'}</div>
+            <div className={`engine-eval ${analysis ? '' : 'pending'}`}>
+              {analysis ? formatAnalysisEval(analysis) : engineOn && engine.status !== 'error' ? '…' : '—'}
+            </div>
             <dl className="engine-stats">
               <div>
                 <dt>
@@ -164,30 +188,48 @@ function EnginePanelImpl() {
               </div>
             </dl>
           </div>
-          {searching && targetDepth && analysis && !analysis.terminal && (
-            <div className="depth-progress" aria-hidden="true">
-              <span style={{ width: `${Math.min(100, (analysis.depth / targetDepth) * 100)}%` }} />
-            </div>
-          )}
+          {/* Always rendered (fades out when idle) so the lines below never jump. */}
+          <div className={`depth-progress ${searching && targetDepth && analysis && !analysis.terminal ? '' : 'idle'}`} aria-hidden="true">
+            <span
+              style={{
+                width: `${targetDepth && analysis && !analysis.terminal ? Math.min(100, (analysis.depth / targetDepth) * 100) : 0}%`,
+              }}
+            />
+          </div>
 
           <div className="engine-lines" aria-live="off">
             {analysis?.terminal ? (
               <p className="muted center">The game is over in this position — there is nothing to analyze.</p>
             ) : analysis && analysis.lines.length ? (
-              analysis.lines.map((l, i) => (
-                <LineRow
-                  key={l.multipv}
-                  fen={fen}
-                  line={l}
-                  index={i}
-                  onPlayTo={(li, mi) => c.playPvTo(li, mi)}
-                  onHover={(h) => c.setPvHover(h)}
-                  onApply={(li) => c.applyEngineMove(li)}
-                  onPlayLine={(li) => c.playLine(li)}
-                />
-              ))
+              <>
+                {analysis.lines.map((l, i) => (
+                  <LineRow
+                    key={l.multipv}
+                    fen={fen}
+                    line={l}
+                    index={i}
+                    onPlayTo={(li, mi) => c.playPvTo(li, mi)}
+                    onHover={(h) => c.setPvHover(h)}
+                    onApply={(li) => c.applyEngineMove(li)}
+                    onPlayLine={(li) => c.playLine(li)}
+                  />
+                ))}
+                {/* Lines still arriving mid-search keep their slot, so nothing below jumps. */}
+                {!analysis.complete &&
+                  Array.from(
+                    {
+                      length: Math.max(0, lineSlots - analysis.lines.length),
+                    },
+                    (_, i) => (
+                      <div className="eline skeleton" key={`pad-${i}`}>
+                        <span className="sk sk-score" />
+                        <span className="sk sk-line" />
+                      </div>
+                    ),
+                  )}
+              </>
             ) : (
-              Array.from({ length: Math.min(3, settings.multipv) }, (_, i) => (
+              Array.from({ length: lineSlots }, (_, i) => (
                 <div className="eline skeleton" key={i}>
                   <span className="sk sk-score" />
                   <span className="sk sk-line" />

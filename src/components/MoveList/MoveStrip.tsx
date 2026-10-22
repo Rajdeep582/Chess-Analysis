@@ -3,7 +3,7 @@ import { mainline, pathTo } from '../../chess/tree';
 import { useApp, useController } from '../../state/context';
 import { ClassificationIcon } from '../ClassificationBadge/ClassificationBadge';
 
-/** Compact, horizontally scrolling move line shown under the board on phones and tablets. */
+/** Compact, wrapping move line shown under the board on phones and tablets. */
 function MoveStripImpl() {
   const c = useController();
   const tree = useApp((s) => s.tree);
@@ -25,16 +25,23 @@ function MoveStripImpl() {
   }, [tree, currentId]);
   const byNode = useMemo(() => new Map((review?.moves ?? []).map((m) => [m.nodeId, m])), [review]);
 
+  // Keep the current move visible by adjusting only the strip's own vertical scroll — instantly and
+  // only when it is out of view, so nothing on the page slides while stepping through moves.
   useEffect(() => {
     const box = ref.current;
-    const el = box?.querySelector<HTMLElement>('[aria-current="true"]');
     if (!box) return;
+    const el = box.querySelector<HTMLElement>('[aria-current="true"]');
     if (!el) {
-      box.scrollTo({ left: 0, behavior: 'smooth' });
+      box.scrollTop = 0;
       return;
     }
-    box.scrollTo({ left: el.offsetLeft - box.clientWidth / 2 + el.clientWidth / 2, behavior: 'smooth' });
-  }, [currentId]);
+    const br = box.getBoundingClientRect();
+    const er = el.getBoundingClientRect();
+    const top = er.top - br.top + box.scrollTop - box.clientTop;
+    const bottom = top + er.height;
+    if (top < box.scrollTop) box.scrollTop = top - 5;
+    else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom - box.clientHeight + 5;
+  }, [currentId, ids, byNode, showCls]);
 
   if (!ids.length) return null;
   return (

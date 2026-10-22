@@ -1,7 +1,7 @@
 import { Chess } from 'chess.js';
 import { AnalysisQueue } from './analysisQueue';
 import type { AnalysisCache } from './analysisCache';
-import type { AnalysisRequest, EngineAnalysis, EngineFlavor, EngineInfo, EngineStatus, WorkerIn, WorkerOut } from './types';
+import type { AnalysisRequest, EngineAnalysis, EngineBuild, EngineFlavor, EngineInfo, EngineStatus, WorkerIn, WorkerOut } from './types';
 
 export interface WorkerLike {
   postMessage(msg: WorkerIn): void;
@@ -55,6 +55,7 @@ export interface ManagerOptions {
   engineBaseUrl: string;
   createWorker?: () => WorkerLike;
   flavors?: EngineFlavor[];
+  build?: EngineBuild;
   threads?: number;
   hashMb?: number;
   /** Echo raw UCI traffic to the console (diagnostics). */
@@ -62,22 +63,33 @@ export interface ManagerOptions {
 }
 
 const ENGINE_FILES: Record<EngineFlavor, string> = {
+  'full-multi': 'stockfish-19.js',
+  'full-single': 'stockfish-19-single.js',
   'lite-multi': 'stockfish-19-lite.js',
   'lite-single': 'stockfish-19-lite-single.js',
   asm: 'stockfish-19-asm.js',
 };
 
-export function detectFlavors(): EngineFlavor[] {
+/**
+ * Engine builds to try, best first. `full` = Stockfish 19 with the full-size NNUE (~100 MB, strongest);
+ * `lite` = the small NNUE (~1.7 MB, loads instantly). Each falls back to the next if it fails to load.
+ */
+export function detectFlavors(build: EngineBuild = 'lite'): EngineFlavor[] {
   const g = globalThis as unknown as { crossOriginIsolated?: boolean; SharedArrayBuffer?: unknown; navigator?: Navigator };
   const wasm = typeof WebAssembly === 'object' && typeof WebAssembly.instantiate === 'function';
+  const multi = wasm && g.crossOriginIsolated && typeof g.SharedArrayBuffer !== 'undefined' && (g.navigator?.hardwareConcurrency ?? 1) > 1;
   const list: EngineFlavor[] = [];
-  if (wasm && g.crossOriginIsolated && typeof g.SharedArrayBuffer !== 'undefined' && (g.navigator?.hardwareConcurrency ?? 1) > 1) {
-    list.push('lite-multi');
+  if (build === 'full' && wasm) {
+    if (multi) list.push('full-multi');
+    list.push('full-single');
   }
+  if (multi) list.push('lite-multi');
   if (wasm) list.push('lite-single');
   list.push('asm');
   return list;
 }
+
+const isMulti = (f: EngineFlavor) => f === 'full-multi' || f === 'lite-multi';
 
 export function autoThreads(): number {
   const hc = (globalThis as unknown as { navigator?: Navigator }).navigator?.hardwareConcurrency ?? 2;
@@ -129,7 +141,8 @@ export class StockfishManager {
   state: ManagerState = { status: 'idle', info: null, error: null, queueSize: 0, runningJob: null };
 
   constructor(private readonly opts: ManagerOptions) {
-    this.flavors = opts.flavors ?? detectFlavors();
+    this.flavors = opts.flavors ?? detectFlavors(opts.build);
+    if (opts.build === 'full') opts.cache.namespace = 'full:';
     this.threads = opts.threads ?? autoThreads();
     this.hashMb = opts.hashMb ?? autoHashMb();
   }
@@ -181,14 +194,15 @@ export class StockfishManager {
       this.onFatal(ev.message || 'The engine worker crashed.');
     };
     const base = this.opts.engineBaseUrl.endsWith('/') ? this.opts.engineBaseUrl : `${this.opts.engineBaseUrl}/`;
-    const threads = flavor === 'lite-multi' ? this.threads : 1;
+    const threads = isMulti(flavor) ? this.threads : 1;
     w.postMessage({
       type: 'init',
       engineUrl: `${base}${ENGINE_FILES[flavor]}`,
       flavor,
       threads,
       hashMb: this.hashMb,
-      timeoutMs: flavor === 'asm' ? 60000 : 30000,
+      // The full net is a ~100 MB download on first use; give slow connections time.
+      timeoutMs: flavor.startsWith('full') ? 300000 : flavor === 'asm' ? 60000 : 30000,
       debug: this.opts.debug,
     });
   }
@@ -283,9 +297,22 @@ export class StockfishManager {
     return this.start();
   }
 
+  /** Switches between the lite and full-strength engine builds (restarts the engine). */
+  setBuild(build: EngineBuild): Promise<void> {
+    this.flavors = detectFlavors(build);
+    this.flavorIndex = 0;
+    this.opts.cache.namespace = build === 'full' ? 'full:' : '';
+    return this.restart();
+  }
+
+  /** The build currently running (falls back to lite if the full build could not load). */
+  get activeFlavor(): EngineFlavor | undefined {
+    return this.flavors[this.flavorIndex];
+  }
+
   configure(threads: number, hashMb: number): void {
     const flavor = this.flavors[this.flavorIndex];
-    const effThreads = flavor === 'lite-multi' ? threads : 1;
+    const effThreads = isMulti(flavor) ? threads : 1;
     const info = this.state.info;
     if (info && (info.threads !== Math.min(effThreads, info.threadsMax) || info.hashMb !== hashMb)) {
       void this.restart({ threads, hashMb }).catch(() => undefined);
@@ -296,7 +323,7 @@ export class StockfishManager {
   }
 
   get supportsThreads(): boolean {
-    return this.flavors.includes('lite-multi');
+    return this.flavors.some(isMulti);
   }
 
   analyze(req: AnalysisRequest, opts: AnalyzeOptions = {}): AnalysisJob {

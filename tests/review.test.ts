@@ -6,7 +6,7 @@ import { isGreat } from '../src/review/great';
 import { isMiss } from '../src/review/miss';
 import { gameAccuracy, moveAccuracy, moveAccuracyFromWin, volatilityWeights, winPercentWhite } from '../src/review/accuracy';
 import { dividePhases, phaseOfPly } from '../src/review/phases';
-import { estimateElo, estimateStrength } from '../src/review/elo';
+import { estimateStrength } from '../src/review/elo';
 import { findCriticalMoments } from '../src/review/criticalMoments';
 import { collectMainline, runReview, DEFAULT_REVIEW_SETTINGS } from '../src/review/reviewPipeline';
 import { createOpeningBook, type OpeningData } from '../src/review/openingBook';
@@ -155,13 +155,26 @@ describe('Game phases & Elo estimate', () => {
     expect(phaseOfPly(3, d)).toBe('middlegame');
     expect(phaseOfPly(4, d)).toBe('endgame');
   });
-  it('maps accuracy to an approximate rating', () => {
-    expect(estimateElo(77, 30)).toBeGreaterThan(600);
-    expect(estimateElo(84, 30)).toBeLessThan(estimateElo(92.5, 30)!);
-    expect(estimateStrength({ accuracy: 88, opponentAccuracy: 88, acpl: 25, opponentRating: 3300, score: 0.5, moves: 40 })).toMatchObject({ method: 'performance' });
-    expect(Math.abs(estimateStrength({ accuracy: 88, opponentAccuracy: 88, acpl: 25, opponentRating: 3300, score: 0.5, moves: 40 })!.elo - 3300)).toBeLessThan(150);
-    expect(estimateElo(90, 3)).toBeNull();
-    expect(estimateElo(null, 30)).toBeNull();
+  it('estimates playing strength from engine move quality', () => {
+    const weak = { accuracy: 60, opponentAccuracy: null, acpl: 130, bestRate: 0.28, blunderRate: 0.12, goodRate: 0.35, meanWinLoss: 9, moves: 30 };
+    const strong = { accuracy: 90, opponentAccuracy: null, acpl: 22, bestRate: 0.55, blunderRate: 0.01, goodRate: 0.75, meanWinLoss: 1.6, moves: 30 };
+    const w = estimateStrength(weak)!;
+    const s = estimateStrength(strong)!;
+    expect(w.method).toBe('quality');
+    expect(s.elo).toBeGreaterThan(w.elo + 800);
+    // Own rating anchors the estimate (Chess.com-style game rating); quality moves it up or down.
+    const ownGood = estimateStrength({ ...strong, ownRating: 1500 })!;
+    const ownBad = estimateStrength({ ...weak, ownRating: 1500 })!;
+    expect(ownGood.method).toBe('rating');
+    expect(ownGood.elo).toBeGreaterThan(1500);
+    expect(ownBad.elo).toBeLessThan(1500);
+    expect(Math.abs(ownGood.elo - 1500)).toBeLessThanOrEqual(500);
+    // Only the opponent's rating known: performance-style.
+    const perf = estimateStrength({ accuracy: 88, opponentAccuracy: 88, acpl: 25, opponentRating: 3300, score: 0.5, moves: 40 })!;
+    expect(perf.method).toBe('performance');
+    expect(Math.abs(perf.elo - 3300)).toBeLessThan(200);
+    expect(estimateStrength({ ...strong, moves: 3 })).toBeNull();
+    expect(estimateStrength({ ...strong, accuracy: null })).toBeNull();
   });
 });
 

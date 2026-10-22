@@ -363,6 +363,7 @@ function ReviewPanelImpl() {
                 const st = review.strength?.[col] ?? null;
                 const elo = st?.elo ?? review.estimatedElo![col];
                 const oppElo = col === 'w' ? info.blackElo : info.whiteElo;
+                const ownElo = col === 'w' ? info.whiteElo : info.blackElo;
                 const acpl = review.acpl?.[col];
                 return (
                   <div key={col} className={`elo-card side-${col}`}>
@@ -379,18 +380,22 @@ function ReviewPanelImpl() {
                     )}
                     <div className="elo-band">{elo ? eloBand(elo) : 'Too few moves'}</div>
                     <div className="elo-basis">
-                      {st?.method === 'performance' && oppElo
-                        ? `vs ${oppElo}-rated opponent · ${review.accuracy[col]?.toFixed(1) ?? '—'}% accuracy`
-                        : `${review.accuracy[col]?.toFixed(1) ?? '—'}% accuracy${acpl !== null && acpl !== undefined ? ` · ${Math.round(acpl)} avg cp loss` : ''}`}
+                      {st?.method === 'rating' && ownElo
+                        ? `rated ${ownElo} · ${review.accuracy[col]?.toFixed(1) ?? '—'}% accuracy`
+                        : st?.method === 'performance' && oppElo
+                          ? `vs ${oppElo}-rated opponent · ${review.accuracy[col]?.toFixed(1) ?? '—'}% accuracy`
+                          : `${review.accuracy[col]?.toFixed(1) ?? '—'}% accuracy${acpl !== null && acpl !== undefined ? ` · ${Math.round(acpl)} avg cp loss` : ''}`}
                     </div>
                   </div>
                 );
               })}
             </div>
             <p className="muted tiny estimate-note">
-              {review.strength?.w?.method === 'performance' || review.strength?.b?.method === 'performance'
-                ? 'Performance estimate: opponent rating + result + accuracy relative to that level. Calibrated on 530 rated Chess.com player-games (typical error ≈ 70 Elo).'
-                : 'No ratings in the PGN, so this uses accuracy and centipawn loss only — a rough estimate (typical error ≈ 200 Elo, wide range).'}
+              {review.strength?.w?.method === 'rating' || review.strength?.b?.method === 'rating'
+                ? 'Game rating: your engine move quality (accuracy, best-move match, blunders, centipawn loss) compared with what your rating level normally plays — the approach Chess.com describes. Calibrated on 748 rated Chess.com player-games; averages out to your real rating over many games.'
+                : review.strength?.w?.method === 'performance' || review.strength?.b?.method === 'performance'
+                  ? 'Performance estimate: opponent rating + result + your engine move quality relative to that level (typical error ≈ 110 Elo).'
+                  : 'No ratings in the PGN, so this comes from engine move quality alone (accuracy, best-move match, blunders, centipawn loss). One game is a weak signal — typical error ≈ 490 Elo, hence the wide range.'}
             </p>
           </>
         )}

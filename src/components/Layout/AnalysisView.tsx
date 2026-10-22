@@ -98,7 +98,9 @@ export function AnalysisView() {
   }, [live, node.fen, evalHistory]);
 
   // Only the first move of each line affects arrows: key on that so deeper iterations don't re-render the board.
-  const liveArrowKey = live && live.fen === node.fen ? live.lines.slice(0, board.arrowCount).map((l) => l.pv[0] ?? '').join(',') : '';
+  // Hide engine arrows during the first shallow iterations, where the best move still flips around.
+  const arrowsReady = !!live && (live.depth >= 9 || live.complete);
+  const liveArrowKey = live && live.fen === node.fen && arrowsReady ? live.lines.slice(0, board.arrowCount).map((l) => l.pv[0] ?? '').join(',') : '';
   const arrows: BoardArrow[] = useMemo(() => {
     const out: BoardArrow[] = [];
     if (retry) {
@@ -107,15 +109,17 @@ export function AnalysisView() {
     }
     const negative = nodeReview && NEGATIVE_CLASSES.includes(nodeReview.classification) && nodeReview.bestMove && nodeReview.bestMove !== nodeReview.uci;
     if (negative && nodeReview.bestMove) out.push({ from: nodeReview.bestMove.slice(0, 2), to: nodeReview.bestMove.slice(2, 4), kind: 'solution' });
-    if (board.showArrows && engineOn && live && live.fen === node.fen) {
+    if (board.showArrows && engineOn && live && live.fen === node.fen && arrowsReady) {
       const n = negative ? 1 : board.arrowCount;
+      const seen = new Set<string>();
       live.lines.slice(0, n).forEach((l, i) => {
-        if (l.pv[0]) out.push({ from: l.pv[0].slice(0, 2), to: l.pv[0].slice(2, 4), kind: i === 0 ? 'best' : 'alt', weight: i === 0 ? 1 : i === 1 ? 0.85 : 0.65 });
+        // Lines can briefly share a first move mid-search; draw each move once (best rank wins).
+        if (l.pv[0] && !seen.has(l.pv[0].slice(0, 4)) && seen.add(l.pv[0].slice(0, 4))) out.push({ from: l.pv[0].slice(0, 2), to: l.pv[0].slice(2, 4), kind: i === 0 ? 'best' : 'alt', rank: i });
       });
     }
     if (pvHover && pvHover.fen === node.fen) out.push({ from: pvHover.uci.slice(0, 2), to: pvHover.uci.slice(2, 4), kind: 'hover' });
     return out;
-  }, [retry, nodeReview, board.showArrows, board.arrowCount, engineOn, liveArrowKey, node.fen, pvHover]);
+  }, [retry, nodeReview, board.showArrows, board.arrowCount, engineOn, liveArrowKey, arrowsReady, node.fen, pvHover]);
 
   const ml = useMemo(() => mainline(tree), [tree]);
   const graphPoints = useMemo(() => ml.map((id) => evalHistory[fenKey(tree.nodes[id].fen)] ?? null), [ml, tree, evalHistory]);
@@ -222,7 +226,7 @@ export function AnalysisView() {
               lastMove={lastMove}
               arrows={arrows}
               interactive={!retry || retry.status === 'waiting' || retry.status === 'incorrect'}
-              onMove={(m) => c.playMove(m)}
+              onMove={(m, meta) => c.playMove(m, meta)}
               showCoordinates={board.coordinates}
               showLegalMoves={board.showLegalMoves}
               showLastMove={board.showLastMove}

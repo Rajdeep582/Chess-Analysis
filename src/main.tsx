@@ -4,6 +4,9 @@ import '@fontsource-variable/manrope';
 import '@fontsource-variable/jetbrains-mono';
 import './styles/app.css';
 import App from './App';
+import { warmUpSounds } from './audio/sounds';
+
+warmUpSounds();
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 function unsupported(): string | null {
@@ -16,8 +19,8 @@ function unsupported(): string | null {
 if ('serviceWorker' in navigator && !window.crossOriginIsolated) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     try {
-      if (sessionStorage.getItem('outpost.coi-reload')) return;
-      sessionStorage.setItem('outpost.coi-reload', '1');
+      if (sessionStorage.getItem('nocturne64.coi-reload')) return;
+      sessionStorage.setItem('nocturne64.coi-reload', '1');
     } catch {
       return;
     }

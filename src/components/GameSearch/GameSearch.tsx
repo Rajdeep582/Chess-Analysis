@@ -135,7 +135,7 @@ export function GameSearch() {
   };
 
   const open = (h: GameHit) => {
-    const r = c.loadText(h.pgn, 'pgn');
+    const r = c.openText(h.pgn, 'pgn');
     if (!r.ok) c.toast('error', 'This game could not be opened.', r.detail ?? r.error);
   };
 

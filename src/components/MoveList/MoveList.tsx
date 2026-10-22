@@ -63,8 +63,12 @@ function MoveListImpl() {
     const el = scroller.current?.querySelector<HTMLElement>(`[data-node="${currentId}"]`);
     const box = scroller.current;
     if (!el || !box) return;
-    const top = el.offsetTop - box.offsetTop;
-    if (top < box.scrollTop + 8 || top > box.scrollTop + box.clientHeight - 40) box.scrollTo({ top: top - box.clientHeight / 2, behavior: 'smooth' });
+    // Position relative to the scroller itself (independent of offsetParent).
+    const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    if (top < box.scrollTop + 8 || top > box.scrollTop + box.clientHeight - 40) {
+      const smooth = !document.documentElement.classList.contains('reduce-motion');
+      box.scrollTo({ top: top - box.clientHeight / 2, behavior: smooth ? 'smooth' : 'auto' });
+    }
   }, [currentId]);
 
   const rows: ReactElement[] = [];

@@ -13,7 +13,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   componentDidCatch(error: Error) {
-    console.error('[Outpost] Unexpected UI error', error);
+    console.error('[Nocturne64] Unexpected UI error', error);
   }
 
   render() {

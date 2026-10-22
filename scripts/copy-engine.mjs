@@ -9,6 +9,10 @@ const src = join(root, 'node_modules', 'stockfish');
 const out = join(root, 'public', 'engine');
 
 const FILES = [
+  'stockfish-19.js',
+  'stockfish-19.wasm',
+  'stockfish-19-single.js',
+  'stockfish-19-single.wasm',
   'stockfish-19-lite-single.js',
   'stockfish-19-lite-single.wasm',
   'stockfish-19-lite.js',
@@ -28,7 +32,8 @@ for (const f of FILES) {
     console.error(`[copy-engine] missing ${f} in stockfish package`);
     process.exit(1);
   }
-  if (existsSync(to) && statSync(to).size === statSync(from).size) continue;
+  // Re-copy when the package was updated (size or modification time differs).
+  if (existsSync(to) && statSync(to).size === statSync(from).size && statSync(to).mtimeMs >= statSync(from).mtimeMs) continue;
   copyFileSync(from, to);
 }
 copyFileSync(join(src, 'Copying.txt'), join(out, 'STOCKFISH-LICENSE.txt'));

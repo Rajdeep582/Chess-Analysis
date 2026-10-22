@@ -81,12 +81,35 @@ function emptyStats(): ReviewStatistics {
  * Pure review computation from engine analyses. `analyses[i]` is the analysis of the
  * position before move i (index 0 = start); `analyses[moves.length]` is the final position.
  */
-export function buildReview(
-  input: ReviewInput,
-  analyses: EngineAnalysis[],
-  settings: ReviewSettings,
-  opts: { book?: OpeningBook | null; engineName?: string; elo?: { w?: number; b?: number }; result?: string } = {},
-): GameReview {
+type BuildOpts = { book?: OpeningBook | null; engineName?: string; elo?: { w?: number; b?: number }; result?: string };
+
+/** Builds the review synchronously (tests, small games). */
+export function buildReview(input: ReviewInput, analyses: EngineAnalysis[], settings: ReviewSettings, opts: BuildOpts = {}): GameReview {
+  const it = buildReviewSteps(input, analyses, settings, opts);
+  for (;;) {
+    const r = it.next();
+    if (r.done) return r.value;
+  }
+}
+
+/**
+ * Same result as `buildReview`, but yields to the browser every few milliseconds so the board,
+ * animations and input stay responsive while long games are classified.
+ */
+export async function buildReviewAsync(input: ReviewInput, analyses: EngineAnalysis[], settings: ReviewSettings, opts: BuildOpts = {}): Promise<GameReview> {
+  const it = buildReviewSteps(input, analyses, settings, opts);
+  let slice = performance.now();
+  for (;;) {
+    const r = it.next();
+    if (r.done) return r.value;
+    if (performance.now() - slice > 12) {
+      await new Promise<void>((res) => setTimeout(res, 0));
+      slice = performance.now();
+    }
+  }
+}
+
+function* buildReviewSteps(input: ReviewInput, analyses: EngineAnalysis[], settings: ReviewSettings, opts: BuildOpts): Generator<void, GameReview, void> {
   const t = settings.thresholds;
   const book = opts.book ?? null;
   const moves: MoveReview[] = [];
@@ -98,8 +121,11 @@ export function buildReview(
   const whiteWin = analyses.slice(0, input.moves.length + 1).map((a) => winPercentWhite(scoreOf(a), a.terminal, a.winner));
   const weights = volatilityWeights(whiteWin);
   const accInputs: AccuracyInputMove[] = [];
+  // Per-move engine data for the strength estimate (rating-neutral Win% lost, engine best-move match).
+  const quality: { color: Color; loss: number; best: boolean; forced: boolean }[] = [];
 
-  input.moves.forEach((mv, i) => {
+  for (let i = 0; i < input.moves.length; i++) {
+    const mv = input.moves[i];
     const before = analyses[i];
     const after = analyses[i + 1];
     const chess = new Chess(mv.fenBefore);
@@ -131,6 +157,7 @@ export function buildReview(
     const phase = phaseOfPly(i, division);
     accInputs.push({ color: mv.color, accuracy: moveAcc, weight: weights[i] ?? 1, forced: res.forced });
     const bestMove = before.bestMove ?? before.lines[0]?.pv[0] ?? null;
+    quality.push({ color: mv.color, loss: res.forced ? 0 : Math.max(0, neutral.epBest - neutral.epPlayed) * 100, best: bestMove === mv.uci, forced: res.forced });
     const bestLineSan = uciLineToSan(mv.fenBefore, before.lines[0]?.pv ?? [], 10);
     const playedLineSan = [mv.san, ...uciLineToSan(mv.fenAfter, after.principalVariation, 9)];
     const opening = moveInBook && book ? book.lookup(mv.fenAfter)?.name : undefined;
@@ -182,7 +209,8 @@ export function buildReview(
     });
     moves.push(review);
     prev = { loss: res.forced ? 0 : m.loss, epMoverBefore: 1 - m.epBest, captureSquare: mv.captured ? mv.to : undefined };
-  });
+    yield;
+  }
 
   const stats = emptyStats();
   for (const m of moves) stats[m.color][m.classification]++;
@@ -216,8 +244,21 @@ export function buildReview(
   const acpl = { w: acplOf('w'), b: acplOf('b') };
   const res = opts.result;
   const resultScore = (c: Color) => (res === '1-0' ? (c === 'w' ? 1 : 0) : res === '0-1' ? (c === 'b' ? 1 : 0) : res === '1/2-1/2' ? 0.5 : undefined);
+  const qualityOf = (c: Color) => {
+    const q = quality.filter((x) => x.color === c && !x.forced);
+    if (!q.length) return {};
+    const share = (f: (x: (typeof q)[number]) => boolean) => q.filter(f).length / q.length;
+    return {
+      bestRate: share((x) => x.best),
+      blunderRate: share((x) => x.loss >= 20),
+      goodRate: share((x) => x.loss < 2),
+      meanWinLoss: q.reduce((s, x) => s + x.loss, 0) / q.length,
+    };
+  };
   const strength = (c: Color) =>
     estimateStrength({
+      ...qualityOf(c),
+      ownRating: opts.elo?.[c],
       accuracy: accuracy[c],
       opponentAccuracy: accuracy[c === 'w' ? 'b' : 'w'],
       acpl: acpl[c],
@@ -364,7 +405,7 @@ export async function runReview(
     );
     check();
     if (analyses.some((a) => !a || (!a.lines.length && !a.terminal))) throw new Error('The engine returned an incomplete analysis.');
-    let review = buildReview(input, analyses, settings, opts);
+    let review = await buildReviewAsync(input, analyses, settings, opts);
     opts.onPartial?.(review);
 
     // Phase 2
@@ -402,7 +443,7 @@ export async function runReview(
       check();
     }
     opts.onProgress?.({ phase: 'finalizing', done: 1, total: 1, label: 'Building review' });
-    review = buildReview(input, analyses, settings, opts);
+    review = await buildReviewAsync(input, analyses, settings, opts);
     return review;
   } finally {
     opts.signal?.removeEventListener('abort', abort);

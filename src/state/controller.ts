@@ -25,7 +25,7 @@ import { loadOpeningBook, type OpeningBook } from '../review/openingBook';
 import { collectMainline, ReviewCancelled, runReview, DEFAULT_REVIEW_SETTINGS } from '../review/reviewPipeline';
 import { DEFAULT_THRESHOLDS, NEGATIVE_CLASSES, type GameReview, type MoveClassification, type ReviewProgress } from '../review/types';
 import { buildReportHtml } from '../sharing/report';
-import { buildShareUrl, decodeShare, MAX_RECOMMENDED_URL } from '../sharing/urlState';
+import { buildShareUrl, decodeShare, encodeShare, MAX_RECOMMENDED_URL } from '../sharing/urlState';
 import { idbCachePersistence } from '../storage/indexedDB';
 import {
   deleteAnalysis,
@@ -169,6 +169,7 @@ export class AnalysisController {
       engineBaseUrl: base,
       threads: settings.engine.threads === 'auto' ? autoThreads() : settings.engine.threads,
       hashMb: settings.engine.hash === 'auto' ? autoHashMb() : settings.engine.hash,
+      build: settings.engine.build,
       debug: new URLSearchParams(window.location.search).has('debug'),
     });
     let prevStatus = this.engine.state.status;
@@ -188,7 +189,11 @@ export class AnalysisController {
   }
 
   /** Called once on app start. */
+  private inited = false;
+
   init(): void {
+    if (this.inited) return; // idempotent (StrictMode double effects)
+    this.inited = true;
     void this.refreshSaved();
     loadOpeningBook()
       .then((book) => this.set({ book }))
@@ -223,7 +228,12 @@ export class AnalysisController {
 
   // ------------------------------------------------------------------ loading
   loadFromHash(): void {
-    const res = decodeShare(window.location.hash);
+    const hash = window.location.hash;
+    if (hash.startsWith('#saved=')) {
+      void this.openSaved(decodeURIComponent(hash.slice(7)));
+      return;
+    }
+    const res = decodeShare(hash);
     if (res.ok) {
       const p = res.payload;
       const ok = p.pgn ? this.loadText(p.pgn, 'pgn', { silent: true }) : this.loadText(p.fen!, 'fen', { silent: true });
@@ -234,9 +244,12 @@ export class AnalysisController {
           const id = ml[Math.min(Math.max(0, p.ply), ml.length - 1)];
           this.goTo(id);
         }
-        this.toast('success', 'Shared analysis loaded');
-      } else this.toast('error', 'Could not open the shared analysis.', ok.detail ?? ok.error);
-      history.replaceState(null, '', window.location.pathname + window.location.search);
+        if (!p.t) this.toast('success', 'Shared analysis loaded');
+        // The hash stays in the address bar so a refresh reopens this game.
+      } else {
+        this.toast('error', 'Could not open the shared analysis.', ok.detail ?? ok.error);
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
     } else if (res.error) {
       this.toast('error', res.error);
       history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -271,6 +284,71 @@ export class AnalysisController {
 
   newBoard(): void {
     this.loadGame(createTree(START_FEN), {}, { title: 'New analysis' });
+  }
+
+  // ------------------------------------------------------------------ opening analyses in a new tab
+  /** Validates PGN/FEN text and turns it into a compact payload for a new analysis tab. */
+  prepareText(text: string, kind: 'auto' | 'pgn' | 'fen' = 'auto'): { ok: true; hash: string } | { ok: false; error: string; detail?: string } {
+    const t = text.trim();
+    if (!t) return { ok: false, error: 'Paste a PGN or a FEN first — the input is empty.' };
+    if (kind === 'fen' || (kind === 'auto' && looksLikeFen(t))) {
+      const v = validateFen(t);
+      if (!v.ok) return { ok: false, error: 'Unable to load this FEN.', detail: v.error };
+      return { ok: true, hash: encodeShare({ v: 1, fen: v.fen!, t: 1 }) };
+    }
+    if (kind === 'auto' && !looksLikePgn(t)) {
+      return { ok: false, error: 'This doesn’t look like a PGN or a FEN.', detail: 'A PGN starts with tags like [Event "…"] or moves like "1. e4 e5"; a FEN looks like "rnbqkbnr/pppppppp/8/… w KQkq - 0 1".' };
+    }
+    try {
+      const p = parsePgn(t);
+      if (p.warnings.length) p.warnings.forEach((w) => this.toast('info', w));
+      return { ok: true, hash: encodeShare({ v: 1, pgn: exportPgn(p.tree, p.headers), t: 1 }) };
+    } catch (e) {
+      if (e instanceof PgnError) return { ok: false, error: e.message, detail: e.detail };
+      return { ok: false, error: 'Unable to load this PGN.', detail: 'The text could not be read as a chess game.' };
+    }
+  }
+
+  /**
+   * Opens an analysis in a new browser tab. `pre` is a tab opened earlier during the user's
+   * click (needed when the content is only ready after an async step, so pop-up blockers allow it).
+   * Falls back to this tab if the browser blocks new tabs.
+   */
+  openTab(hash: string, pre?: Window | null): void {
+    const url = `${window.location.origin}${window.location.pathname}${window.location.search}${hash}`;
+    let w: Window | null = null;
+    try {
+      if (pre && !pre.closed) {
+        pre.location.href = url;
+        w = pre;
+      } else w = window.open(url, '_blank');
+    } catch {
+      w = null;
+    }
+    if (!w) {
+      window.location.hash = hash;
+      this.toast('info', 'Your browser blocked the new tab, so the analysis opened here.');
+    }
+  }
+
+  /** Validates and opens text in a new tab. Returns the validation error, if any. */
+  openText(text: string, kind: 'auto' | 'pgn' | 'fen' = 'auto', pre?: Window | null): { ok: boolean; error?: string; detail?: string } {
+    const r = this.prepareText(text, kind);
+    if (!r.ok) {
+      pre?.close();
+      return r;
+    }
+    this.openTab(r.hash, pre);
+    return { ok: true };
+  }
+
+  openNewBoardTab(): void {
+    this.openTab(encodeShare({ v: 1, fen: START_FEN, t: 1 }));
+  }
+
+  openSavedTab(id: string): void {
+    this.closeModal();
+    this.openTab(`#saved=${encodeURIComponent(id)}`);
   }
 
   loadGame(
@@ -315,6 +393,7 @@ export class AnalysisController {
     this.cancelReview(true);
     this.engine.cancelGroup('live');
     this.set({ view: 'home', retry: null, modal: null });
+    if (window.location.hash) history.replaceState(null, '', window.location.pathname + window.location.search);
     void this.refreshSaved();
   }
 
@@ -337,12 +416,20 @@ export class AnalysisController {
     const nodes = this.state.tree.nodes;
     const to = nodes[toId];
     if (!to) return;
+    const delay = this.landDelay();
     if (nodes[fromId]?.parentId === toId) {
-      playSound('back', snd.volume);
+      playSound('back', snd.volume, delay);
       return;
     }
     if (!to.san) return;
-    playSound(soundForMove(to.san, !!to.captured), snd.volume);
+    playSound(soundForMove(to.san, !!to.captured), snd.volume, delay);
+  }
+
+  /** Seconds until a sliding piece visually lands, so its sound is heard on contact (0 without animation). */
+  private landDelay(dragged = false): number {
+    const s = this.state.settings;
+    if (dragged || !s.board.animations || s.performance.reduceMotion || s.performance.lowPower) return 0;
+    return 0.1;
   }
 
   next(): void {
@@ -404,10 +491,10 @@ export class AnalysisController {
 
   // ------------------------------------------------------------------ moves & variations
   /** Plays a move on the board. Returns false if illegal. */
-  playMove(move: MoveInput): boolean {
+  playMove(move: MoveInput, meta?: { dragged: boolean }): boolean {
     const s = this.state;
     if (s.retry && (s.retry.status === 'waiting' || s.retry.status === 'incorrect')) {
-      void this.retryMove(move);
+      void this.retryMove(move, meta);
       return true;
     }
     if (s.retry) return false;
@@ -418,7 +505,7 @@ export class AnalysisController {
     const mainlineExtended = mlAfter.length !== mlBefore.length;
     this.stopTimers();
     const played = res.tree.nodes[res.nodeId];
-    if (s.settings.sound?.enabled) playSound(soundForMove(played.san, !!played.captured), s.settings.sound.volume);
+    if (s.settings.sound?.enabled) playSound(soundForMove(played.san, !!played.captured), s.settings.sound.volume, this.landDelay(meta?.dragged));
     this.set({
       tree: res.tree,
       currentId: res.nodeId,
@@ -745,7 +832,7 @@ export class AnalysisController {
     });
   }
 
-  private async retryMove(move: MoveInput): Promise<void> {
+  private async retryMove(move: MoveInput, meta?: { dragged: boolean }): Promise<void> {
     const s = this.state;
     const retry = s.retry;
     const review = s.review;
@@ -761,7 +848,7 @@ export class AnalysisController {
       return;
     }
     const attemptFen = chess.fen();
-    if (s.settings.sound?.enabled) playSound(soundForMove(san, san.includes('x')), s.settings.sound.volume);
+    if (s.settings.sound?.enabled) playSound(soundForMove(san, san.includes('x')), s.settings.sound.volume, this.landDelay(meta?.dragged));
     const base = { ...retry, attemptSan: san, attemptFen, attemptMove: { from: move.from, to: move.to }, revealed: false };
     this.set({ retry: { ...base, status: 'checking', message: 'Checking your move with the engine…' } });
     const mv = review.moves[retry.moveIndex];
@@ -856,6 +943,7 @@ export class AnalysisController {
         next.engine.hash === 'auto' ? autoHashMb() : next.engine.hash,
       );
     }
+    if (prev.engine.build !== next.engine.build) void this.engine.setBuild(next.engine.build).catch(() => undefined);
     const e1 = effectiveEngine(prev);
     const e2 = effectiveEngine(next);
     if (e1.depth !== e2.depth || e1.multipv !== e2.multipv || e1.mode !== e2.mode || e1.movetimeMs !== e2.movetimeMs) this.scheduleLive();
@@ -1026,7 +1114,7 @@ export function annotator(review: GameReview | null) {
 
 function analysisJson(title: string, tree: GameTree, headers: PgnHeaders, review: GameReview | null) {
   return {
-    format: 'outpost-analysis',
+    format: 'nocturne64-analysis',
     version: 1,
     exportedAt: new Date().toISOString(),
     title,

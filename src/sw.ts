@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 /**
- * Outpost service worker.
+ * Nocturne64 service worker.
  *  1. Precaches the app shell, the Stockfish WASM builds and the opening data so the
  *     analysis lab works offline after the first visit.
  *  2. Adds cross-origin isolation headers (COOP/COEP/CORP) to every same-origin response.
@@ -13,7 +13,7 @@ declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: (string | { url:
 
 const precache = new PrecacheController();
 precache.addToCacheList(self.__WB_MANIFEST);
-const RUNTIME = 'outpost-runtime-v1';
+const RUNTIME = 'nocturne64-runtime-v1';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

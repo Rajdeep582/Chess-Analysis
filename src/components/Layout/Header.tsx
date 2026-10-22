@@ -12,9 +12,9 @@ export function Header() {
   const [editing, setEditing] = useState(false);
   return (
     <header className="app-header">
-      <button type="button" className="brand" onClick={() => c.goHome()} aria-label="Outpost home">
+      <button type="button" className="brand" onClick={() => c.goHome()} aria-label="Nocturne64 home">
         <Logo />
-        <span className="brand-name">Outpost</span>
+        <span className="brand-name">Nocturne64</span>
         <span className="brand-sub">analysis lab</span>
       </button>
       {view === 'analysis' && (

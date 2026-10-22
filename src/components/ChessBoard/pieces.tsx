@@ -2,7 +2,7 @@ import type { JSX } from 'react';
 import type { Color, PieceSymbol } from '../../chess/types';
 import type { PieceSetId } from '../../state/settings';
 
-/* Original piece artwork for Outpost. Drawn on a 45×45 grid. */
+/* Original piece artwork for Nocturne64. Drawn on a 45×45 grid. */
 
 interface Palette {
   fill: string;

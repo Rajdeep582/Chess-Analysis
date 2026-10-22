@@ -22,8 +22,8 @@ export default defineConfig({
       injectRegister: 'auto',
       includeAssets: ['favicon.svg', 'engine/STOCKFISH-LICENSE.txt'],
       manifest: {
-        name: 'Outpost — Chess Analysis Lab',
-        short_name: 'Outpost',
+        name: 'Nocturne64 — Chess Analysis Lab',
+        short_name: 'Nocturne64',
         description: 'Analyze chess games with Stockfish running locally in your browser.',
         theme_color: '#11141a',
         background_color: '#11141a',
@@ -37,8 +37,8 @@ export default defineConfig({
       },
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2,wasm,json,txt,webmanifest}'],
-        // The asm.js fallback (3 MB) is only fetched — and then runtime-cached — when WebAssembly is unavailable.
-        globIgnores: ['**/stockfish-19-asm.js', 'sw.js'],
+        // Not precached: the full-NNUE builds (~100 MB each, fetched when that build is selected) and the asm.js fallback (3 MB, only without WebAssembly); both are runtime-cached on first use.
+        globIgnores: ['**/stockfish-19-asm.js', '**/stockfish-19.wasm', '**/stockfish-19-single.wasm', '**/stockfish-19.js', '**/stockfish-19-single.js', 'sw.js'],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
       },
     }),

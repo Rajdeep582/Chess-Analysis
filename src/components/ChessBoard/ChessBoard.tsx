@@ -1,5 +1,5 @@
 import { Chess, type Square as CjSquare } from 'chess.js';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import type { Color, MoveInput, PieceSymbol } from '../../chess/types';
 import type { MoveClassification } from '../../review/types';
 import type { BoardThemeId, PieceSetId } from '../../state/settings';
@@ -20,7 +20,8 @@ export interface ChessBoardProps {
   lastMove?: { from: string; to: string } | null;
   arrows?: BoardArrow[];
   interactive?: boolean;
-  onMove?: (m: MoveInput) => boolean;
+  /** `dragged`: the piece was dropped by hand (lands instantly, no slide). */
+  onMove?: (m: MoveInput, meta?: { dragged: boolean }) => boolean;
   showCoordinates?: boolean;
   showLegalMoves?: boolean;
   showLastMove?: boolean;
@@ -60,6 +61,7 @@ function dist(a: string, b: string) {
 }
 
 let pieceSeq = 1;
+const idNum = (id: string) => Number(id.slice(1)) || 0;
 
 /**
  * Keeps stable ids for pieces across positions so moves animate as real moves:
@@ -131,6 +133,8 @@ function ChessBoardImpl(props: ChessBoardProps) {
   const [userArrows, setUserArrows] = useState<BoardArrow[]>([]);
   const [circles, setCircles] = useState<string[]>([]);
   const [focusSq, setFocusSq] = useState<string>('e2');
+  // The keyboard cursor square is only shown once the user actually steers it (Alt + arrows).
+  const [kbdNav, setKbdNav] = useState(false);
   const rightStart = useRef<string | null>(null);
 
   const chess = useMemo(() => {
@@ -146,12 +150,18 @@ function ChessBoardImpl(props: ChessBoardProps) {
   const firstPaint = useRef(true);
   const ghostsRef = useRef<PieceOnBoard[]>([]);
   const [, setTick] = useState(0);
+  // Cached per FEN so a repeated render (StrictMode, re-renders) never re-pairs against itself.
+  const pairing = useRef<{ fen: string; pieces: PieceOnBoard[]; gone: PieceOnBoard[] } | null>(null);
   const pieces = useMemo(() => {
+    if (pairing.current?.fen === fen) return pairing.current.pieces;
     const { pieces: next, gone } = assignIds(prevPieces.current, parsePieces(fen));
+    // Render in a fixed (creation) order: React never re-inserts a DOM node mid-move.
+    next.sort((a, b) => idNum(a.id) - idNum(b.id));
     prevPieces.current = next;
     // Captured / removed pieces fade out on their square (rendered in the same frame, no flicker).
     ghostsRef.current = firstPaint.current ? [] : gone;
     firstPaint.current = false;
+    pairing.current = { fen, pieces: next, gone };
     return next;
   }, [fen]);
   useEffect(() => {
@@ -162,6 +172,59 @@ function ChessBoardImpl(props: ChessBoardProps) {
     }, 260);
     return () => clearTimeout(t);
   }, [pieces]);
+
+  // Piece motion via the Web Animations API (FLIP): every square change animates from where the
+  // piece currently is — including mid-flight when stepping quickly — independent of CSS
+  // transitions, which browsers silently drop when a node is moved or restyled in the same frame.
+  const pieceEls = useRef(new Map<string, HTMLDivElement>());
+  const lastPos = useRef(new Map<string, { x: number; y: number }>());
+  const lastOrient = useRef(orientation);
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    const prev = lastPos.current;
+    const next = new Map<string, { x: number; y: number }>();
+    const flipped = lastOrient.current !== orientation;
+    lastOrient.current = orientation;
+    for (const p of pieces) {
+      const [x, y] = sqXY(p.sq, orientation);
+      next.set(p.id, { x, y });
+      const el = pieceEls.current.get(p.id);
+      if (!el || typeof el.animate !== 'function') continue;
+      const old = prev.get(p.id);
+      const running = el.getAnimations().filter((a) => a.id === 'move' || a.id === 'enter');
+      if (!animate || flipped || dropped.current === p.sq) {
+        running.forEach((a) => a.cancel());
+        continue;
+      }
+      if (!old) {
+        if (mounted.current) el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' }).id = 'enter';
+        continue;
+      }
+      if (old.x === x && old.y === y) continue;
+      // Start from the on-screen position if a previous move is still animating.
+      const from = running.length ? getComputedStyle(el).transform : `translate3d(${old.x * 100}%, ${old.y * 100}%, 0)`;
+      running.forEach((a) => a.cancel());
+      const to = `translate3d(${x * 100}%, ${y * 100}%, 0)`;
+      const d = Math.hypot(x - old.x, y - old.y);
+      const anim = el.animate(
+        [
+          { transform: from, zIndex: 5 },
+          { transform: to, zIndex: 5 },
+        ],
+        { duration: Math.round(Math.min(240, 175 + d * 9)), easing: 'cubic-bezier(0.25, 0.85, 0.3, 1)' },
+      );
+      anim.id = 'move';
+    }
+    lastPos.current = next;
+    mounted.current = true;
+  }, [pieces, orientation, animate]);
+  // A dragged piece follows the pointer: stop any motion still running on it.
+  useLayoutEffect(() => {
+    if (!drag?.moved) return;
+    const p = prevPieces.current.find((q) => q.sq === drag.from);
+    const el = p && pieceEls.current.get(p.id);
+    el?.getAnimations().forEach((a) => a.cancel());
+  }, [drag?.moved, drag?.from]);
   const ghosts = animate ? ghostsRef.current : [];
   // A piece dropped by drag-and-drop should land instantly, not slide from the cursor.
   useEffect(() => {
@@ -219,14 +282,18 @@ function ChessBoardImpl(props: ChessBoardProps) {
         setPromotion({ from, to, color: turn });
         return true;
       }
-      const ok = onMove({ from, to });
+      const ok = onMove({ from, to }, { dragged: dropped.current === to });
       setSelected(null);
       return ok;
     },
     [chess, onMove, turn],
   );
 
+  // Square under a dragged piece (highlighted like a physical board's target square).
+  const overSq = drag?.moved ? squareFromPoint(drag.x, drag.y) : null;
+
   const onPointerDown = (e: RPointerEvent<HTMLDivElement>) => {
+    if (kbdNav) setKbdNav(false);
     const sq = squareFromPoint(e.clientX, e.clientY);
     if (!sq) return;
     if (e.button === 2) {
@@ -289,6 +356,7 @@ function ChessBoardImpl(props: ChessBoardProps) {
       setFocusSq(`${FILES[f]}${r + 1}`);
     };
     if (!e.altKey) return; // Plain arrows are reserved for move navigation.
+    if (!kbdNav) setKbdNav(true);
     if (e.key === 'ArrowLeft') move(-1, 0);
     else if (e.key === 'ArrowRight') move(1, 0);
     else if (e.key === 'ArrowUp') move(0, -1);
@@ -312,7 +380,8 @@ function ChessBoardImpl(props: ChessBoardProps) {
     return out;
   }, [orientation]);
 
-  const boardRect = boardRef.current?.getBoundingClientRect();
+  // Only measured while dragging (avoids a forced layout on every render).
+  const boardRect = drag?.moved ? boardRef.current?.getBoundingClientRect() : undefined;
   const allArrows = [...arrows, ...userArrows];
 
   return (
@@ -345,7 +414,8 @@ function ChessBoardImpl(props: ChessBoardProps) {
               selected === sq ? 'selected' : '',
 
               target ? (legalTargets.get(sq) ? 'target capture' : 'target') : '',
-              focusSq === sq ? 'kbd-focus' : '',
+              kbdNav && focusSq === sq ? 'kbd-focus' : '',
+              overSq === sq ? 'drag-over' : '',
             ].join(' ')}
             style={{ gridColumn: x + 1, gridRow: y + 1 }}
           >
@@ -369,7 +439,11 @@ function ChessBoardImpl(props: ChessBoardProps) {
           return (
             <div
               key={p.id}
-              className={`piece ${p.color}${p.type} ${checkSquare === p.sq && p.type === 'k' ? (checkState?.mate ? 'in-check mated' : 'in-check') : ''}`}
+              ref={(el) => {
+                if (el) pieceEls.current.set(p.id, el);
+                else if (pieceEls.current.get(p.id)?.isConnected === false) pieceEls.current.delete(p.id);
+              }}
+              className={`piece ${p.color}${p.type}${dragging ? ' lifted' : ''} ${checkSquare === p.sq && p.type === 'k' ? (checkState?.mate ? 'in-check mated' : 'in-check') : ''}`}
               style={style}
             >
               <PieceSvg color={p.color} type={p.type} set={pieceSet} />
@@ -412,7 +486,7 @@ function ChessBoardImpl(props: ChessBoardProps) {
                 className="promo-btn"
                 aria-label={`Promote to ${PIECE_LABEL[t]}`}
                 onClick={() => {
-                  onMove?.({ from: promotion.from, to: promotion.to, promotion: t });
+                  onMove?.({ from: promotion.from, to: promotion.to, promotion: t }, { dragged: dropped.current === promotion.to });
                   setPromotion(null);
                   setSelected(null);
                 }}

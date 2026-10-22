@@ -146,7 +146,7 @@ export interface GameReview {
   phases?: { middlegameStart: number | null; endgameStart: number | null };
   /** Approximate playing strength from accuracy (single-game estimate). */
   estimatedElo?: Record<Color, number | null>;
-  strength?: Record<Color, { elo: number; low: number; high: number; method: 'performance' | 'quality' } | null>;
+  strength?: Record<Color, { elo: number; low: number; high: number; method: 'rating' | 'performance' | 'quality' } | null>;
   acpl?: Record<Color, number | null>;
 }
 

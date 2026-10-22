@@ -3,7 +3,7 @@ import type { CachePersistence, CacheRecord } from '../engine/analysisCache';
 import type { SavedAnalysis } from './savedAnalyses';
 import type { DbGame } from '../database/types';
 
-interface OutpostDB extends DBSchema {
+interface Nocturne64DB extends DBSchema {
   analyses: { key: string; value: SavedAnalysis; indexes: { updatedAt: number } };
   engineCache: { key: string; value: CacheRecord; indexes: { updatedAt: number } };
   games: { key: string; value: DbGame; indexes: { collection: string } };
@@ -16,15 +16,16 @@ export class StorageError extends Error {
   }
 }
 
+// Database name kept from the app's earlier name so existing saved analyses stay available.
 const DB_NAME = 'outpost-chess';
-let dbPromise: Promise<IDBPDatabase<OutpostDB>> | null = null;
+let dbPromise: Promise<IDBPDatabase<Nocturne64DB>> | null = null;
 
-export function getDb(): Promise<IDBPDatabase<OutpostDB>> {
+export function getDb(): Promise<IDBPDatabase<Nocturne64DB>> {
   if (typeof indexedDB === 'undefined') {
     return Promise.reject(new StorageError('Local storage (IndexedDB) is not available in this browser or mode.', 'unavailable'));
   }
   if (!dbPromise) {
-    dbPromise = openDB<OutpostDB>(DB_NAME, 2, {
+    dbPromise = openDB<Nocturne64DB>(DB_NAME, 2, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const a = db.createObjectStore('analyses', { keyPath: 'id' });

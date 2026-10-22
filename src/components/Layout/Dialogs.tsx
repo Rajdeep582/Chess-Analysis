@@ -135,7 +135,7 @@ export function ShortcutsDialog() {
       <h3>About the analysis</h3>
       <ul className="small">
         <li>All computation runs locally: Stockfish 19 compiled to WebAssembly, in a Web Worker.</li>
-        <li>Move classifications and accuracy use Outpost’s own expected-points model with adjustable thresholds; they will differ from other sites.</li>
+        <li>Move classifications and accuracy use Nocturne64’s own expected-points model with adjustable thresholds; they will differ from other sites.</li>
         <li>“Book” moves come from the open lichess-org/chess-openings dataset (CC0).</li>
         <li>Explanations are generated deterministically from engine scores, principal variations and material counts.</li>
       </ul>

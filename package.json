@@ -1,5 +1,5 @@
 {
-  "name": "outpost-chess-analysis",
+  "name": "nocturne64-chess-analysis",
   "private": true,
   "version": "1.0.0",
   "description": "Frontend-only chess analysis lab powered by Stockfish WASM in the browser.",
@@ -25,7 +25,7 @@
     "lz-string": "^1.5.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "stockfish": "^19.0.0"
+    "stockfish": "^19.0.1"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",

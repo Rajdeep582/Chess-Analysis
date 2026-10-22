@@ -20,6 +20,8 @@ interface Search {
 type AnalyzeMsg = Extract<WorkerIn, { type: 'analyze' }>;
 
 const NAME_BY_FLAVOR: Record<EngineFlavor, string> = {
+  'full-multi': 'Stockfish 19',
+  'full-single': 'Stockfish 19',
   'lite-multi': 'Stockfish 19 Lite',
   'lite-single': 'Stockfish 19 Lite',
   asm: 'Stockfish 19 (asm.js)',

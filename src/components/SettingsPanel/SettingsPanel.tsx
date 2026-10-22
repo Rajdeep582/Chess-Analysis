@@ -105,6 +105,15 @@ export function SettingsPanel() {
             <input type="range" min={1} max={5} value={s.engine.multipv} aria-label="MultiPV" onChange={(e) => up((x) => ({ ...x, engine: { ...x.engine, multipv: Number(e.target.value) } }))} />
           </Row>
           <Row
+            label="Engine build"
+            help="Full uses Stockfish 19's full-size neural network: strongest analysis, ~100 MB downloaded once and then cached. Lite uses the small network: loads instantly, slightly weaker."
+          >
+            <select value={s.engine.build} onChange={(e) => up((x) => ({ ...x, engine: { ...x.engine, build: e.target.value === 'full' ? 'full' : 'lite' } }))}>
+              <option value="full">Full NNUE (100 MB)</option>
+              <option value="lite">Lite NNUE (1.7 MB)</option>
+            </select>
+          </Row>
+          <Row
             label="Threads"
             help={
               threadsSupported
@@ -156,11 +165,11 @@ export function SettingsPanel() {
           </Row>
           <Row label="Piece set">
             <div className="piece-sets" role="radiogroup" aria-label="Piece set">
-              {(['classic', 'outpost', 'tokens'] as PieceSetId[]).map((p) => (
+              {(['classic', 'nocturne', 'tokens'] as PieceSetId[]).map((p) => (
                 <button key={p} type="button" role="radio" aria-checked={s.board.pieceSet === p} className={`pset ${s.board.pieceSet === p ? 'active' : ''}`} onClick={() => up((x) => ({ ...x, board: { ...x.board, pieceSet: p } }))}>
                   <PieceSvg color="w" type="n" set={p} />
                   <PieceSvg color="b" type="q" set={p} />
-                  <span>{p === 'classic' ? 'Classic' : p === 'outpost' ? 'Outpost' : 'Tokens'}</span>
+                  <span>{p === 'classic' ? 'Classic' : p === 'nocturne' ? 'Nocturne' : 'Tokens'}</span>
                 </button>
               ))}
             </div>
@@ -191,7 +200,7 @@ export function SettingsPanel() {
             <select value={s.review.strength} onChange={(e) => up((x) => ({ ...x, review: { ...x.review, strength: e.target.value as ReviewStrength } }))}>
               {Object.entries(REVIEW_STRENGTH).map(([k, v]) => (
                 <option key={k} value={k}>
-                  {v.label} (depth {v.quickDepth} → {v.deepDepth})
+                  {v.label} · {v.quickDepth}→{v.deepDepth}
                 </option>
               ))}
             </select>

@@ -32,7 +32,7 @@ export function HomeScreen() {
   const isFen = looksLikeFen(text);
 
   const submit = () => {
-    const r = c.loadText(text, isFen ? 'fen' : 'pgn');
+    const r = c.openText(text, isFen ? 'fen' : 'pgn');
     if (!r.ok) setError({ error: r.error ?? 'Could not load input.', detail: r.detail });
     else setError(null);
   };
@@ -43,12 +43,20 @@ export function HomeScreen() {
       setError({ error: 'This file is too large.', detail: 'PGN files up to 2 MB are supported.' });
       return;
     }
+    // Open the tab now, during the click, so pop-up blockers allow it; fill it once the file is read.
+    let pre: Window | null = null;
+    try {
+      pre = window.open('', '_blank');
+    } catch {
+      pre = null;
+    }
     try {
       const t = await f.text();
       setText(t);
-      const r = c.loadText(t, 'pgn');
+      const r = c.openText(t, 'pgn', pre);
       if (!r.ok) setError({ error: r.error ?? 'Could not load file.', detail: r.detail });
     } catch {
+      pre?.close();
       setError({ error: 'The file could not be read.' });
     }
   };
@@ -149,7 +157,7 @@ export function HomeScreen() {
           <button type="button" className="btn primary big" onClick={submit} disabled={!trimmed}>
             {isFen ? 'Analyze position' : 'Analyze game'} <Icon name="next" size={16} />
           </button>
-          <button type="button" className="btn ghost" onClick={() => c.newBoard()}>
+          <button type="button" className="btn ghost" onClick={() => c.openNewBoardTab()}>
             <Icon name="plus" size={16} /> Empty board
           </button>
           <span className="spacer" />
@@ -167,7 +175,7 @@ export function HomeScreen() {
         <ul className="deck">
           {legends.map((g, i) => (
             <li key={g.id} className="deck-item" style={{ ['--i' as string]: i }}>
-              <button type="button" className="deck-card" onClick={() => c.loadText(g.pgn, 'pgn')} aria-label={`Open ${g.title}: ${g.white} vs ${g.black}, ${g.year}`}>
+              <button type="button" className="deck-card" onClick={() => c.openText(g.pgn, 'pgn')} aria-label={`Open ${g.title}: ${g.white} vs ${g.black}, ${g.year}`}>
                 <div className="deck-board" aria-hidden="true">
                   <ChessBoard fen={g.finalFen} orientation={g.orientation} interactive={false} showCoordinates={false} animate={false} theme={board.theme} pieceSet={board.pieceSet} lastMove={g.lastMove} />
                 </div>

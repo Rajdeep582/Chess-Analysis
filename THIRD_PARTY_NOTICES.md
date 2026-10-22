@@ -1,7 +1,7 @@
 # Third-party notices
 
 ## Stockfish (GPL-3.0)
-Outpost runs the Stockfish chess engine, compiled to WebAssembly, inside your browser.
+Nocturne64 runs the Stockfish chess engine, compiled to WebAssembly, inside your browser.
 
 - Stockfish — Copyright (C) T. Romstad, M. Costalba, J. Kiiski, G. Linscott and the Stockfish developers (see AUTHORS).
   Source: https://github.com/official-stockfish/Stockfish
@@ -11,7 +11,7 @@ Outpost runs the Stockfish chess engine, compiled to WebAssembly, inside your br
 
 Licensed under the GNU General Public License v3. The full license text is shipped with every build at
 `engine/STOCKFISH-LICENSE.txt` (copied from the package's `Copying.txt`). Because the engine is distributed
-with this application, Outpost itself is released under GPL-3.0-or-later; the complete corresponding source is
+with this application, Nocturne64 itself is released under GPL-3.0-or-later; the complete corresponding source is
 this repository.
 
 ## Opening names (CC0-1.0)
@@ -31,5 +31,5 @@ licensed GPLv2 or later (used here under GPLv3). Obtained from https://github.co
 - Manrope and JetBrains Mono fonts (via Fontsource) — SIL Open Font License 1.1
 
 ## Original assets
-The logo, UI icons, classification icons, the "Outpost" and "Tokens" piece sets, board themes and color palette
+The logo, UI icons, classification icons, the "Nocturne" and "Tokens" piece sets, board themes and color palette
 are original to this project. No third-party chess-site branding or artwork is used.

@@ -61,7 +61,20 @@ function moveGain(m: Move): number {
  * Capture-only quiescence search on material. Returns the best material gain achievable by
  * the side to move through captures (≥ 0 thanks to stand-pat), relative to the current material.
  */
+const qCache = new Map<string, number>();
+
 export function quiescenceGain(fen: string, maxDepth = 6): number {
+  // Pure function of the position: memoised (reviews evaluate the same positions repeatedly).
+  const key = `${maxDepth}|${fen.split(' ').slice(0, 4).join(' ')}`;
+  const hit = qCache.get(key);
+  if (hit !== undefined) return hit;
+  const v = quiescenceGainUncached(fen, maxDepth);
+  if (qCache.size > 20000) qCache.clear();
+  qCache.set(key, v);
+  return v;
+}
+
+function quiescenceGainUncached(fen: string, maxDepth: number): number {
   let chess: Chess;
   try {
     chess = new Chess(fen);

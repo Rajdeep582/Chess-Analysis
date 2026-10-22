@@ -71,7 +71,7 @@ export function SavedAnalyses() {
                     }}
                   />
                 ) : (
-                  <button type="button" className="lib-open" onClick={() => void c.openSaved(a.id)}>
+                  <button type="button" className="lib-open" onClick={() => c.openSavedTab(a.id)}>
                     <span className="recent-title">{a.title}</span>
                     <span className="muted small">
                       {a.players.white} – {a.players.black} · {a.result} · {a.moves} plies · {new Date(a.updatedAt).toLocaleString()}
@@ -96,7 +96,7 @@ export function SavedAnalyses() {
                 </div>
               ) : (
                 <div className="lib-actions">
-                  <button type="button" className="icon-btn" aria-label={`Open ${a.title}`} onClick={() => void c.openSaved(a.id)} data-tip="Open">
+                  <button type="button" className="icon-btn" aria-label={`Open ${a.title}`} onClick={() => c.openSavedTab(a.id)} data-tip="Open">
                     <Icon name="folder" size={16} />
                   </button>
                   <button type="button" className="icon-btn" aria-label={`Rename ${a.title}`} onClick={() => setRenaming(a.id)} data-tip="Rename">

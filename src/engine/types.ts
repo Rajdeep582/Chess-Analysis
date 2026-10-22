@@ -54,7 +54,8 @@ export interface AnalysisRequest {
   multipv: number;
 }
 
-export type EngineFlavor = 'lite-multi' | 'lite-single' | 'asm';
+export type EngineFlavor = 'full-multi' | 'full-single' | 'lite-multi' | 'lite-single' | 'asm';
+export type EngineBuild = 'lite' | 'full';
 
 export interface EngineInfo {
   name: string;

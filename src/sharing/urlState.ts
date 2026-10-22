@@ -10,6 +10,8 @@ export interface SharePayload {
   /** Main-line ply to open at. */
   ply?: number;
   orientation?: 'w' | 'b';
+  /** Set when the app itself opened this tab (suppresses the "shared analysis" toast). */
+  t?: 1;
 }
 
 export const SHARE_PREFIX = '#a=';

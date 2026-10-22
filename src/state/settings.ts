@@ -1,6 +1,6 @@
 export type DepthPreset = 'quick' | 'normal' | 'deep' | 'very-deep' | 'custom';
 export type BoardThemeId = 'slate' | 'sandstone' | 'glacier' | 'orchid' | 'graphite';
-export type PieceSetId = 'classic' | 'outpost' | 'tokens';
+export type PieceSetId = 'classic' | 'nocturne' | 'tokens';
 export type ReviewStrength = 'fast' | 'standard' | 'deep';
 
 export interface Settings {
@@ -12,6 +12,8 @@ export interface Settings {
     hash: 'auto' | number;
     mode: 'depth' | 'time' | 'infinite';
     movetimeMs: number;
+    /** 'full' = Stockfish 19 with the full NNUE (~100 MB once, strongest); 'lite' = small NNUE. */
+    build: 'lite' | 'full';
   };
   board: {
     theme: BoardThemeId;
@@ -53,8 +55,16 @@ export const REVIEW_STRENGTH: Record<ReviewStrength, { label: string; quickDepth
   deep: { label: 'Thorough', quickDepth: 14, deepDepth: 21, maxDeepPositions: 40 },
 };
 
+/** Full-strength net on desktops/laptops with enough memory; the lite net on phones and small devices. */
+function defaultBuild(): 'lite' | 'full' {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'lite';
+  const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  const touchOnly = window.matchMedia('(pointer: coarse)').matches && !window.matchMedia('(pointer: fine)').matches;
+  return !touchOnly && (mem === undefined || mem >= 4) ? 'full' : 'lite';
+}
+
 export const DEFAULT_SETTINGS: Settings = {
-  engine: { preset: 'normal', depth: 18, multipv: 3, threads: 'auto', hash: 'auto', mode: 'depth', movetimeMs: 5000 },
+  engine: { preset: 'normal', depth: 18, multipv: 3, threads: 'auto', hash: 'auto', mode: 'depth', movetimeMs: 5000, build: defaultBuild() },
   board: {
     theme: 'slate',
     pieceSet: 'classic',
@@ -71,7 +81,8 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: { enabled: true, volume: 0.7 },
 };
 
-const KEY = 'outpost.settings.v1';
+const KEY = 'nocturne64.settings.v1';
+const LEGACY_KEY = 'outpost.settings.v1';
 
 function merge<T extends object>(base: T, patch: unknown): T {
   if (!patch || typeof patch !== 'object') return base;
@@ -87,9 +98,11 @@ function merge<T extends object>(base: T, patch: unknown): T {
 
 export function loadSettings(): Settings {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY);
     if (!raw) return DEFAULT_SETTINGS;
-    return merge(DEFAULT_SETTINGS, JSON.parse(raw));
+    const s = merge(DEFAULT_SETTINGS, JSON.parse(raw));
+    if ((s.board.pieceSet as string) === 'outpost') s.board.pieceSet = 'nocturne';
+    return s;
   } catch {
     return DEFAULT_SETTINGS;
   }
