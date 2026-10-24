@@ -1,6 +1,20 @@
 export type DepthPreset = 'quick' | 'normal' | 'deep' | 'very-deep' | 'custom';
 export type BoardThemeId = 'slate' | 'sandstone' | 'glacier' | 'orchid' | 'graphite';
-export type PieceSetId = 'classic' | 'nocturne' | 'tokens';
+export type PieceSetId = 'classic' | 'staunty' | 'maestro' | 'tatiana' | 'california' | 'cardinal' | 'merida' | 'chessnut' | 'nocturne' | 'tokens';
+
+/** Piece sets in the settings picker. Image sets live in public/pieces/<dir> (see README credits). */
+export const PIECE_SETS: { id: PieceSetId; label: string; dir?: string }[] = [
+  { id: 'classic', label: 'Classic', dir: 'cburnett' },
+  { id: 'staunty', label: 'Staunty', dir: 'staunty' },
+  { id: 'maestro', label: 'Maestro', dir: 'maestro' },
+  { id: 'tatiana', label: 'Tatiana', dir: 'tatiana' },
+  { id: 'california', label: 'California', dir: 'california' },
+  { id: 'cardinal', label: 'Cardinal', dir: 'cardinal' },
+  { id: 'merida', label: 'Merida', dir: 'merida' },
+  { id: 'chessnut', label: 'Chessnut', dir: 'chessnut' },
+  { id: 'nocturne', label: 'Nocturne' },
+  { id: 'tokens', label: 'Tokens' },
+];
 export type ReviewStrength = 'fast' | 'standard' | 'deep';
 
 export interface Settings {
@@ -14,6 +28,8 @@ export interface Settings {
     movetimeMs: number;
     /** 'full' = Stockfish 19 with the full NNUE (~100 MB once, strongest); 'lite' = small NNUE. */
     build: 'lite' | 'full';
+    /** True once the user picked an engine build themselves (otherwise the app starts on Lite). */
+    buildChosen: boolean;
   };
   board: {
     theme: BoardThemeId;
@@ -55,16 +71,39 @@ export const REVIEW_STRENGTH: Record<ReviewStrength, { label: string; quickDepth
   deep: { label: 'Thorough', quickDepth: 14, deepDepth: 21, maxDeepPositions: 40 },
 };
 
-/** Full-strength net on desktops/laptops with enough memory; the lite net on phones and small devices. */
-function defaultBuild(): 'lite' | 'full' {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'lite';
-  const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-  const touchOnly = window.matchMedia('(pointer: coarse)').matches && !window.matchMedia('(pointer: fine)').matches;
-  return !touchOnly && (mem === undefined || mem >= 4) ? 'full' : 'lite';
+/** Engine mode switch ("Lite" / "Max"): Max = full NNUE, every CPU thread, a larger hash and Thorough reviews. */
+export type EngineMode = 'lite' | 'max';
+
+export function maxThreads(): number {
+  const hc = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
+  return Math.max(1, Math.min(32, hc));
 }
 
+export function maxHashMb(): number {
+  const mem = typeof navigator !== 'undefined' ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory : undefined;
+  // deviceMemory is capped at 8 by browsers (and missing in Safari/Firefox): 256 MB is safe on anything that reports ≥ 4 GB.
+  return mem === undefined || mem >= 4 ? 256 : 64;
+}
+
+/** Settings for an engine mode. Lite keeps the light, fast defaults; Max takes the strongest available setup. */
+export function applyEngineMode(s: Settings, mode: EngineMode): Settings {
+  return mode === 'max'
+    ? {
+        ...s,
+        engine: { ...s.engine, build: 'full', buildChosen: true, threads: maxThreads(), hash: maxHashMb() },
+        review: { ...s.review, strength: 'deep' },
+      }
+    : {
+        ...s,
+        engine: { ...s.engine, build: 'lite', buildChosen: true, threads: 'auto', hash: 'auto' },
+        review: { ...s.review, strength: 'standard' },
+      };
+}
+
+export const engineModeOf = (s: Settings): EngineMode => (s.engine.build === 'full' ? 'max' : 'lite');
+
 export const DEFAULT_SETTINGS: Settings = {
-  engine: { preset: 'normal', depth: 18, multipv: 3, threads: 'auto', hash: 'auto', mode: 'depth', movetimeMs: 5000, build: defaultBuild() },
+  engine: { preset: 'normal', depth: 18, multipv: 3, threads: 'auto', hash: 'auto', mode: 'depth', movetimeMs: 5000, build: 'lite', buildChosen: false },
   board: {
     theme: 'slate',
     pieceSet: 'classic',
@@ -91,7 +130,7 @@ function merge<T extends object>(base: T, patch: unknown): T {
     const pv = (patch as Record<string, unknown>)[k];
     if (pv === undefined) continue;
     if (v && typeof v === 'object' && !Array.isArray(v)) out[k] = merge(v as object, pv);
-    else if (typeof pv === typeof v || (k === 'threads' || k === 'hash')) out[k] = pv;
+    else if (typeof pv === typeof v || k === 'threads' || k === 'hash') out[k] = pv;
   }
   return out as T;
 }
@@ -102,6 +141,9 @@ export function loadSettings(): Settings {
     if (!raw) return DEFAULT_SETTINGS;
     const s = merge(DEFAULT_SETTINGS, JSON.parse(raw));
     if ((s.board.pieceSet as string) === 'outpost') s.board.pieceSet = 'nocturne';
+    if (!PIECE_SETS.some((p) => p.id === s.board.pieceSet)) s.board.pieceSet = 'classic';
+    // The app opens on Lite unless the user switched engines themselves.
+    if (!s.engine.buildChosen) s.engine = { ...s.engine, build: 'lite' };
     return s;
   } catch {
     return DEFAULT_SETTINGS;

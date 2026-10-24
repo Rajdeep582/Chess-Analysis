@@ -1,13 +1,20 @@
-import { useEffect, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { AnalysisController } from './state/controller';
 import { ControllerContext, useApp, useController } from './state/context';
 import { Header } from './components/Layout/Header';
+import { MainNav } from './components/Layout/MainNav';
 import { HomeScreen } from './components/PGNInput/HomeScreen';
 import { AnalysisView } from './components/Layout/AnalysisView';
 import { SettingsPanel } from './components/SettingsPanel/SettingsPanel';
 import { SavedAnalyses } from './components/SavedAnalyses/SavedAnalyses';
 import { ExportDialog, SaveDialog, ShareDialog, ShortcutsDialog } from './components/Layout/Dialogs';
 import { Toasts } from './components/common/Toasts';
+
+// Feature pages are code-split: they load only when opened.
+const PlayPage = lazy(() => import('./components/Pages/PlayPage'));
+const PuzzlesPage = lazy(() => import('./components/Pages/PuzzlesPage'));
+const OpeningsPage = lazy(() => import('./components/Pages/OpeningsPage'));
+const EditorPage = lazy(() => import('./components/Pages/EditorPage'));
 
 function isTyping(el: EventTarget | null): boolean {
   const t = el as HTMLElement | null;
@@ -41,7 +48,9 @@ function Shell() {
 
   const title = useApp((s) => s.title);
   useEffect(() => {
-    document.title = view === 'analysis' && title ? `${title} · Nocturne64` : 'Nocturne64 — Chess Analysis Lab';
+    const pageTitles: Record<string, string> = { play: 'Play vs Stockfish', puzzles: 'Puzzles', openings: 'Opening Explorer', editor: 'Board Editor' };
+    document.title =
+      view === 'analysis' && title ? `${title} · Nocturne64` : pageTitles[view] ? `${pageTitles[view]} · Nocturne64` : 'Nocturne64 — Chess Analysis Lab';
   }, [view, title]);
 
   useEffect(() => {
@@ -107,7 +116,19 @@ function Shell() {
         Skip to content
       </a>
       <Header />
-      {view === 'home' ? <HomeScreen /> : <AnalysisView />}
+      {view === 'home' ? (
+        <HomeScreen />
+      ) : view === 'analysis' ? (
+        <AnalysisView />
+      ) : (
+        <Suspense fallback={<main className="page page-loading" id="main" aria-busy="true" />}>
+          {view === 'play' && <PlayPage />}
+          {view === 'puzzles' && <PuzzlesPage />}
+          {view === 'openings' && <OpeningsPage />}
+          {view === 'editor' && <EditorPage />}
+        </Suspense>
+      )}
+      <MainNav variant="bottom" />
       {modal === 'settings' && <SettingsPanel />}
       {modal === 'saved' && <SavedAnalyses />}
       {modal === 'save' && <SaveDialog />}

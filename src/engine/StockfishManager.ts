@@ -298,7 +298,9 @@ export class StockfishManager {
   }
 
   /** Switches between the lite and full-strength engine builds (restarts the engine). */
-  setBuild(build: EngineBuild): Promise<void> {
+  setBuild(build: EngineBuild, threads?: number, hashMb?: number): Promise<void> {
+    if (threads) this.threads = threads;
+    if (hashMb) this.hashMb = hashMb;
     this.flavors = detectFlavors(build);
     this.flavorIndex = 0;
     this.opts.cache.namespace = build === 'full' ? 'full:' : '';

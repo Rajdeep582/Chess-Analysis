@@ -10,6 +10,8 @@ export interface OpeningInfo {
 export interface OpeningBook {
   isBook(fen: string): boolean;
   lookup(fen: string): OpeningInfo | null;
+  /** Every named opening: position key (placement, side, castling) + ECO + name. */
+  named(): { key: string; eco: string; name: string }[];
   readonly size: number;
 }
 
@@ -29,6 +31,7 @@ export function createOpeningBook(data: OpeningData): OpeningBook {
       const v = data.named[keyOf(fen)];
       return v ? { eco: v[0], name: v[1] } : null;
     },
+    named: () => Object.entries(data.named).map(([key, [eco, name]]) => ({ key, eco, name })),
     size: set.size,
   };
 }

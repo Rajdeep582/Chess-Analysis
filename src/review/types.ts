@@ -120,6 +120,9 @@ export interface ReviewSettings {
   deepDepth: number;
   maxDeepPositions: number;
   multipv: number;
+  /** Per-position time caps (ms) so a few very sharp positions can't stall the review on slow devices. */
+  quickMaxTimeMs?: number;
+  deepMaxTimeMs?: number;
   thresholds: ClassificationThresholds;
   whiteRating?: number;
   blackRating?: number;

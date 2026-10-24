@@ -195,7 +195,7 @@ export class EngineSession {
     }
     this.send(`position fen ${msg.fen}`);
     const l = msg.limit;
-    this.send(l.kind === 'depth' ? `go depth ${l.depth}` : l.kind === 'time' ? `go movetime ${l.movetimeMs}` : 'go infinite');
+    this.send(l.kind === 'depth' ? `go depth ${l.depth}${l.maxTimeMs ? ` movetime ${Math.round(l.maxTimeMs)}` : ''}` : l.kind === 'time' ? `go movetime ${l.movetimeMs}` : 'go infinite');
     this.state = 'searching';
   }
 

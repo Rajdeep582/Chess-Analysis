@@ -44,7 +44,8 @@ export interface EngineAnalysis {
 }
 
 export type SearchLimit =
-  | { kind: 'depth'; depth: number }
+  /** `maxTimeMs` (optional) stops a slow search early: "go depth D movetime T", whichever comes first. */
+  | { kind: 'depth'; depth: number; maxTimeMs?: number }
   | { kind: 'time'; movetimeMs: number }
   | { kind: 'infinite' };
 

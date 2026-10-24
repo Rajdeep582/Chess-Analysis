@@ -37,7 +37,17 @@ import {
   type SavedAnalysisSummary,
 } from '../storage/savedAnalyses';
 import { copyText, downloadText, safeFilename } from '../utils/download';
-import { DEFAULT_SETTINGS, effectiveEngine, loadSettings, persistSettings, REVIEW_STRENGTH, type Settings } from './settings';
+import {
+  DEFAULT_SETTINGS,
+  effectiveEngine,
+  loadSettings,
+  persistSettings,
+  REVIEW_STRENGTH,
+  type Settings,
+  applyEngineMode,
+  engineModeOf,
+  type EngineMode,
+} from './settings';
 import { Store } from './store';
 import { playSound, soundForMove } from '../audio/sounds';
 
@@ -75,8 +85,14 @@ export interface EvalPoint {
   winner?: 'w' | 'b';
 }
 
+/** Stand-alone pages reached from the home screen (each has its own #/route). */
+export type PageView = 'play' | 'puzzles' | 'openings' | 'editor';
+export const PAGE_VIEWS: PageView[] = ['play', 'puzzles', 'openings', 'editor'];
+
 export interface AppState {
-  view: 'home' | 'analysis';
+  view: 'home' | 'analysis' | PageView;
+  /** Start position handed to the Play page (e.g. from the board editor). */
+  playFen: string | null;
   tree: GameTree;
   headers: PgnHeaders;
   currentId: string;
@@ -114,6 +130,7 @@ function initialState(settings: Settings): AppState {
   const tree = createTree(START_FEN);
   return {
     view: 'home',
+    playFen: null,
     tree,
     headers: {},
     currentId: tree.rootId,
@@ -157,6 +174,8 @@ export class AnalysisController {
   private reviewAbort: AbortController | null = null;
   private reviewAnalyses: EngineAnalysis[] | null = null;
   private toastId = 1;
+  /** A game/position has been opened this session (the nav's "Analysis" returns to it). */
+  hadGame = false;
 
   constructor() {
     const settings = loadSettings();
@@ -200,6 +219,7 @@ export class AnalysisController {
       .catch(() => undefined);
     this.loadFromHash();
     window.addEventListener('hashchange', () => this.loadFromHash());
+    window.addEventListener('popstate', () => this.loadFromHash());
   }
 
   // ------------------------------------------------------------------ toasts / modals
@@ -229,6 +249,16 @@ export class AnalysisController {
   // ------------------------------------------------------------------ loading
   loadFromHash(): void {
     const hash = window.location.hash;
+    const page = /^#\/(\w+)/.exec(hash)?.[1] as PageView | undefined;
+    if (page && PAGE_VIEWS.includes(page)) {
+      if (this.state.view !== page) this.set({ view: page, modal: null });
+      return;
+    }
+    if (!hash && PAGE_VIEWS.includes(this.state.view as PageView)) {
+      // Browser back from a page to the home screen.
+      this.set({ view: 'home', modal: null });
+      return;
+    }
     if (hash.startsWith('#saved=')) {
       void this.openSaved(decodeURIComponent(hash.slice(7)));
       return;
@@ -268,7 +298,11 @@ export class AnalysisController {
       return { ok: true };
     }
     if (kind === 'auto' && !looksLikePgn(t)) {
-      return { ok: false, error: 'This doesn’t look like a PGN or a FEN.', detail: 'A PGN starts with tags like [Event "…"] or moves like "1. e4 e5"; a FEN looks like "rnbqkbnr/pppppppp/8/… w KQkq - 0 1".' };
+      return {
+        ok: false,
+        error: 'This doesn’t look like a PGN or a FEN.',
+        detail: 'A PGN starts with tags like [Event "…"] or moves like "1. e4 e5"; a FEN looks like "rnbqkbnr/pppppppp/8/… w KQkq - 0 1".',
+      };
     }
     try {
       const p = parsePgn(t);
@@ -297,7 +331,11 @@ export class AnalysisController {
       return { ok: true, hash: encodeShare({ v: 1, fen: v.fen!, t: 1 }) };
     }
     if (kind === 'auto' && !looksLikePgn(t)) {
-      return { ok: false, error: 'This doesn’t look like a PGN or a FEN.', detail: 'A PGN starts with tags like [Event "…"] or moves like "1. e4 e5"; a FEN looks like "rnbqkbnr/pppppppp/8/… w KQkq - 0 1".' };
+      return {
+        ok: false,
+        error: 'This doesn’t look like a PGN or a FEN.',
+        detail: 'A PGN starts with tags like [Event "…"] or moves like "1. e4 e5"; a FEN looks like "rnbqkbnr/pppppppp/8/… w KQkq - 0 1".',
+      };
     }
     try {
       const p = parsePgn(t);
@@ -342,6 +380,17 @@ export class AnalysisController {
     return { ok: true };
   }
 
+  /** Validates and opens text in this tab (Back returns to the page you came from). */
+  openHere(text: string, kind: 'auto' | 'pgn' | 'fen' = 'auto'): { ok: boolean; error?: string; detail?: string } {
+    const r = this.prepareText(text, kind);
+    if (!r.ok) return r;
+    // pushState (no hashchange/popstate event) + load directly → loaded exactly once; Back returns here.
+    history.pushState(null, '', `${window.location.pathname}${window.location.search}${r.hash}`);
+    const res = this.loadText(text, kind, { silent: true });
+    window.scrollTo({ top: 0 });
+    return res;
+  }
+
   openNewBoardTab(): void {
     this.openTab(encodeShare({ v: 1, fen: START_FEN, t: 1 }));
   }
@@ -356,6 +405,7 @@ export class AnalysisController {
     headers: PgnHeaders,
     opts: { title?: string; savedId?: string | null; currentId?: string; review?: GameReview | null; orientation?: 'w' | 'b' },
   ): void {
+    this.hadGame = true;
     this.stopTimers();
     this.cancelReview(true);
     this.engine.cancelGroup('live');
@@ -384,6 +434,28 @@ export class AnalysisController {
       panelTab: opts.review ? 'review' : 'engine',
       warnings: [],
     });
+    void this.engine.start().catch(() => undefined);
+    this.scheduleLive();
+  }
+
+  /** Opens one of the stand-alone pages (Play, Puzzles, Openings, Editor) in this tab, with its own URL. */
+  openPage(page: PageView, opts: { fen?: string } = {}): void {
+    this.stopTimers();
+    this.engine.cancelGroup('live');
+    this.set({ view: page, modal: null, playFen: page === 'play' ? (opts.fen ?? null) : this.state.playFen });
+    const url = `${window.location.pathname}${window.location.search}#/${page}`;
+    if (window.location.hash !== `#/${page}`) history.pushState(null, '', url);
+    window.scrollTo({ top: 0 });
+    void this.engine.start().catch(() => undefined);
+  }
+
+  /** Nav "Analysis": back to the open game if there is one, otherwise the import screen. */
+  openAnalysis(): void {
+    if (this.state.view === 'analysis') return;
+    if (!this.hadGame) return this.goHome();
+    this.set({ view: 'analysis', modal: null });
+    if (window.location.hash.startsWith('#/')) history.pushState(null, '', window.location.pathname + window.location.search);
+    window.scrollTo({ top: 0 });
     void this.engine.start().catch(() => undefined);
     this.scheduleLive();
   }
@@ -710,7 +782,12 @@ export class AnalysisController {
     this.liveJob = null;
     const abort = new AbortController();
     this.reviewAbort = abort;
-    this.set({ reviewProgress: { phase: 'quick', done: 0, total: input.moves.length + 1, label: 'Starting engine' }, reviewError: null, retry: null, panelTab: 'review' });
+    this.set({
+      reviewProgress: { phase: 'quick', done: 0, total: input.moves.length + 1, label: 'Starting engine' },
+      reviewError: null,
+      retry: null,
+      panelTab: 'review',
+    });
     try {
       await this.engine.start();
       const book = this.state.book ?? (await loadOpeningBook().catch(() => null));
@@ -876,7 +953,10 @@ export class AnalysisController {
       if (uci === before.bestMove) loss = 0;
       else if (line) loss = Math.max(0, epBest - lineEpFor(line, mv.color));
       else {
-        const after = await this.engine.analyze({ fen: attemptFen, limit: { kind: 'depth', depth: Math.max(12, before.depth - 2) }, multipv: 1 }, { priority: 0, group: 'retry' }).promise;
+        const after = await this.engine.analyze(
+          { fen: attemptFen, limit: { kind: 'depth', depth: Math.max(12, before.depth - 2) }, multipv: 1 },
+          { priority: 0, group: 'retry' },
+        ).promise;
         if (!after.lines.length && !after.terminal) throw new Error('The engine did not return an evaluation.');
         loss = Math.max(0, epBest - epFor(after, mv.color));
       }
@@ -931,19 +1011,28 @@ export class AnalysisController {
   }
 
   // ------------------------------------------------------------------ settings
+  /** Lite / Max engine switch (review panel). Not available while a review is running. */
+  setEngineMode(mode: EngineMode): void {
+    if (this.state.reviewProgress) return;
+    if (engineModeOf(this.state.settings) === mode) return;
+    this.updateSettings((s) => applyEngineMode(s, mode));
+    this.toast('info', mode === 'max' ? 'Max: Stockfish 19 full NNUE · all threads · thorough review' : 'Lite: fast Stockfish 19 Lite');
+  }
+
   updateSettings(fn: (s: Settings) => Settings): void {
     const prev = this.state.settings;
     const next = fn(prev);
     persistSettings(next);
     this.set({ settings: next });
     this.cache.enabled = next.performance.cacheAnalysis;
-    if (prev.engine.threads !== next.engine.threads || prev.engine.hash !== next.engine.hash) {
-      this.engine.configure(
-        next.engine.threads === 'auto' ? autoThreads() : next.engine.threads,
-        next.engine.hash === 'auto' ? autoHashMb() : next.engine.hash,
-      );
+    const threads = next.engine.threads === 'auto' ? autoThreads() : next.engine.threads;
+    const hash = next.engine.hash === 'auto' ? autoHashMb() : next.engine.hash;
+    if (prev.engine.build !== next.engine.build) {
+      // One restart with the new build, threads and hash together.
+      void this.engine.setBuild(next.engine.build, threads, hash).catch(() => undefined);
+    } else if (prev.engine.threads !== next.engine.threads || prev.engine.hash !== next.engine.hash) {
+      this.engine.configure(threads, hash);
     }
-    if (prev.engine.build !== next.engine.build) void this.engine.setBuild(next.engine.build).catch(() => undefined);
     const e1 = effectiveEngine(prev);
     const e2 = effectiveEngine(next);
     if (e1.depth !== e2.depth || e1.multipv !== e2.multipv || e1.mode !== e2.mode || e1.movetimeMs !== e2.movetimeMs) this.scheduleLive();
@@ -1034,7 +1123,8 @@ export class AnalysisController {
   async exportSaved(id: string, kind: 'pgn' | 'json'): Promise<void> {
     try {
       const a = await getAnalysis(id);
-      if (kind === 'pgn') downloadText(`${safeFilename(a.title)}.pgn`, exportPgn(a.tree, a.headers, { annotate: annotator(a.review) }), 'application/x-chess-pgn');
+      if (kind === 'pgn')
+        downloadText(`${safeFilename(a.title)}.pgn`, exportPgn(a.tree, a.headers, { annotate: annotator(a.review) }), 'application/x-chess-pgn');
       else downloadText(`${safeFilename(a.title)}.json`, JSON.stringify(analysisJson(a.title, a.tree, a.headers, a.review), null, 2), 'application/json');
     } catch (e) {
       this.toast('error', 'Export failed.', (e as Error).message);
@@ -1127,4 +1217,3 @@ function analysisJson(title: string, tree: GameTree, headers: PgnHeaders, review
     review,
   };
 }
-

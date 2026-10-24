@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp, useController } from '../../state/context';
 import { Icon } from '../common/Icon';
+import { MainNav } from './MainNav';
 import { Logo } from './Logo';
 
 export function Header() {
@@ -11,7 +12,7 @@ export function Header() {
   const savedId = useApp((s) => s.savedId);
   const [editing, setEditing] = useState(false);
   return (
-    <header className="app-header">
+    <header className={`app-header ${view === 'analysis' ? 'is-analysis' : ''}`}>
       <button type="button" className="brand" onClick={() => c.goHome()} aria-label="Nocturne64 home">
         <Logo />
         <span className="brand-name">Nocturne64</span>
@@ -41,6 +42,7 @@ export function Header() {
           )}
         </div>
       )}
+      <MainNav variant="top" />
       <nav className="header-actions" aria-label="Main">
         {view === 'analysis' && (
           <>

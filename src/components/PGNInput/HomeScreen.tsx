@@ -102,7 +102,16 @@ export function HomeScreen() {
         </div>
         <div className="hero-board" aria-hidden="true">
           <div className="hero-board-inner">
-            <ChessBoard fen={HERO_FEN} orientation="w" interactive={false} showCoordinates={false} theme={board.theme} pieceSet={board.pieceSet} lastMove={{ from: 'd1', to: 'd8' }} animate={false} />
+            <ChessBoard
+              fen={HERO_FEN}
+              orientation="w"
+              interactive={false}
+              showCoordinates={false}
+              theme={board.theme}
+              pieceSet={board.pieceSet}
+              lastMove={{ from: 'd1', to: 'd8' }}
+              animate={false}
+            />
           </div>
           <div className="hero-board-caption">
             <b>17. Rd8#</b> <span>Morphy · Paris 1858</span>
@@ -175,9 +184,23 @@ export function HomeScreen() {
         <ul className="deck">
           {legends.map((g, i) => (
             <li key={g.id} className="deck-item" style={{ ['--i' as string]: i }}>
-              <button type="button" className="deck-card" onClick={() => c.openText(g.pgn, 'pgn')} aria-label={`Open ${g.title}: ${g.white} vs ${g.black}, ${g.year}`}>
+              <button
+                type="button"
+                className="deck-card"
+                onClick={() => c.openText(g.pgn, 'pgn')}
+                aria-label={`Open ${g.title}: ${g.white} vs ${g.black}, ${g.year}`}
+              >
                 <div className="deck-board" aria-hidden="true">
-                  <ChessBoard fen={g.finalFen} orientation={g.orientation} interactive={false} showCoordinates={false} animate={false} theme={board.theme} pieceSet={board.pieceSet} lastMove={g.lastMove} />
+                  <ChessBoard
+                    fen={g.finalFen}
+                    orientation={g.orientation}
+                    interactive={false}
+                    showCoordinates={false}
+                    animate={false}
+                    theme={board.theme}
+                    pieceSet={board.pieceSet}
+                    lastMove={g.lastMove}
+                  />
                 </div>
                 <div className="deck-meta">
                   <span className="deck-player">{g.player}</span>

@@ -1,6 +1,6 @@
 import type { JSX } from 'react';
 import type { Color, PieceSymbol } from '../../chess/types';
-import type { PieceSetId } from '../../state/settings';
+import { PIECE_SETS, type PieceSetId } from '../../state/settings';
 
 /* Original piece artwork for Nocturne64. Drawn on a 45×45 grid. */
 
@@ -84,7 +84,15 @@ function Token({ color, type }: { color: Color; type: PieceSymbol }) {
     <g>
       <circle cx="22.5" cy="22.5" r={type === 'p' ? 11 : 16} fill={light ? '#f5f2ea' : '#232832'} stroke={light ? '#3a404b' : '#0b0d11'} strokeWidth="1.6" />
       {type !== 'p' && (
-        <text x="22.5" y="28.2" textAnchor="middle" fontSize="16" fontWeight="700" fontFamily="'JetBrains Mono Variable', ui-monospace, monospace" fill={light ? '#1b1f27' : '#e9edf3'}>
+        <text
+          x="22.5"
+          y="28.2"
+          textAnchor="middle"
+          fontSize="16"
+          fontWeight="700"
+          fontFamily="'JetBrains Mono Variable', ui-monospace, monospace"
+          fill={light ? '#1b1f27' : '#e9edf3'}
+        >
           {LETTER[type]}
         </text>
       )}
@@ -94,11 +102,13 @@ function Token({ color, type }: { color: Color; type: PieceSymbol }) {
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+const DIRS = new Map(PIECE_SETS.filter((p) => p.dir).map((p) => [p.id, p.dir!]));
 
 export function PieceSvg({ color, type, set }: { color: Color; type: PieceSymbol; set: PieceSetId }) {
-  if (set === 'classic') {
-    // Colin M.L. Burnett's set (GPLv2+), served from public/pieces/cburnett.
-    return <img className="piece-svg" src={`${BASE}pieces/cburnett/${color}${type.toUpperCase()}.svg`} alt="" draggable={false} aria-hidden="true" />;
+  const dir = DIRS.get(set);
+  if (dir) {
+    // Image sets served from public/pieces/<dir> (licences in the README).
+    return <img className="piece-svg" src={`${BASE}pieces/${dir}/${color}${type.toUpperCase()}.svg`} alt="" draggable={false} aria-hidden="true" />;
   }
   return (
     <svg viewBox="0 0 45 45" className="piece-svg" aria-hidden="true" focusable="false">

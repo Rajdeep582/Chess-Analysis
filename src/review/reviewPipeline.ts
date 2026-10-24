@@ -47,6 +47,8 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = {
   deepDepth: 18,
   maxDeepPositions: 30,
   multipv: 2,
+  quickMaxTimeMs: 1500,
+  deepMaxTimeMs: 2500,
   thresholds: DEFAULT_THRESHOLDS,
 };
 
@@ -392,10 +394,12 @@ export async function runReview(
     // Phase 1
     let done = 0;
     opts.onProgress?.({ phase: 'quick', done, total: fens.length, label: `Scanning positions (depth ${settings.quickDepth})` });
+    // Searched in game order: consecutive positions share most of their search tree, so the engine's
+    // hash table (kept between searches) makes each next position cheaper. Measured faster than reverse order.
     await Promise.all(
-      fens.map((fen, i) =>
+      fens.map((_, i) =>
         engine
-          .analyze({ fen, limit: { kind: 'depth', depth: settings.quickDepth }, multipv: settings.multipv }, { priority: 2, group })
+          .analyze({ fen: fens[i], limit: { kind: 'depth', depth: settings.quickDepth, maxTimeMs: settings.quickMaxTimeMs }, multipv: settings.multipv }, { priority: 2, group })
           .promise.then((a) => {
             analyses[i] = a;
             done++;
@@ -410,10 +414,14 @@ export async function runReview(
 
     // Phase 2
     if (settings.deepDepth > settings.quickDepth && settings.maxDeepPositions > 0) {
+      // A move between two already-decided positions (same side clearly winning before and after) cannot
+      // change class with more depth, so it is not worth a deep search.
+      const decided = (ep: number) => ep > 0.97 || ep < 0.03;
       const candidates = review.moves
         .filter(
           (m) =>
             !m.forced &&
+            !(decided(m.epBefore) && decided(m.epAfter) && m.epBefore > 0.5 === m.epAfter > 0.5) &&
             m.classification !== 'book' &&
             (m.evaluationLoss > settings.thresholds.good || ['brilliant', 'great', 'miss'].includes(m.classification) || m.sacrifice >= settings.thresholds.sacrificeMin),
         )
@@ -425,14 +433,16 @@ export async function runReview(
         idx.add(c.ply - review.moves[0].ply);
         idx.add(c.ply - review.moves[0].ply + 1);
       }
-      const targets = [...idx].filter((i) => i >= 0 && i < fens.length && !analyses[i].terminal && analyses[i].depth < settings.deepDepth);
+      const targets = [...idx]
+        .filter((i) => i >= 0 && i < fens.length && !analyses[i].terminal && analyses[i].depth < settings.deepDepth)
+        .sort((a, b) => a - b); // game order: neighbouring positions share hash-table entries
       let deepDone = 0;
       const label = `Deep analysis of critical positions (depth ${settings.deepDepth})`;
       opts.onProgress?.({ phase: 'deep', done: 0, total: targets.length, label });
       await Promise.all(
         targets.map((i) =>
           engine
-            .analyze({ fen: fens[i], limit: { kind: 'depth', depth: settings.deepDepth }, multipv: settings.multipv }, { priority: 1, group })
+            .analyze({ fen: fens[i], limit: { kind: 'depth', depth: settings.deepDepth, maxTimeMs: settings.deepMaxTimeMs }, multipv: settings.multipv }, { priority: 1, group })
             .promise.then((a) => {
               if (a.lines.length && a.depth >= analyses[i].depth) analyses[i] = a;
               deepDone++;

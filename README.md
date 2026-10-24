@@ -120,7 +120,8 @@ npm run dev        # → http://localhost:5173
 | `npm run preview` | Serves `dist/` with the same headers |
 | `npm test` | Unit + integration tests (runs the real Stockfish WASM in Node) |
 | `npm run typecheck` | TypeScript only |
-| `npm run build:openings` | Regenerates `public/data/openings.json` from the lichess-org/chess-openings data |
+| `npm run build:openings` | Regenerates `public/data/openings.json` and `opening-lines.json` from the lichess-org/chess-openings data |
+| `python3 scripts/build-puzzles.py part.zst puzzleTheme.xml` | Regenerates the offline puzzle pack `public/data/puzzles.json` (see the script header) |
 
 ---
 
@@ -260,10 +261,10 @@ flowchart LR
 
 | Build | Size | Default on |
 | --- | --- | --- |
-| **Full NNUE**, Stockfish 19's full network (strongest) | ~100 MB, downloaded once then cached | Desktops and laptops |
-| **Lite NNUE** | 1.7 MB, instant | Phones and low-memory devices |
+| **Max**: Stockfish 19 full NNUE, every CPU thread, 256 MB hash, Thorough review depths | ~100 MB, downloaded once then cached | Optional (one tap) |
+| **Lite**: Stockfish 19 Lite NNUE, Standard review depths | 1.7 MB, instant | **Default** on every device |
 
-You can switch at any time in *Settings → Engine build*.
+Switch with the **Lite / Max** toggle at the top of the Review panel (desktop, tablet and phone) or in *Settings → Engine build*.
 
 ---
 
@@ -358,6 +359,9 @@ npm test
 - **[Stockfish](https://github.com/official-stockfish/Stockfish)**: GPL-3.0, by the Stockfish developers.
 - **[stockfish.js](https://github.com/nmrugg/stockfish.js)**: WebAssembly builds by Nathan Rugg.
 - **Opening names**: [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings), CC0.
+- **Piece sets** (from the [lichess-org/lila](https://github.com/lichess-org/lila) repository): Classic — Colin M.L. Burnett, GPLv2+; Merida — Armando Hernandez Marroquin, GPLv2+; Chessnut — Alexis Luengas, Apache 2.0; Staunty, Maestro, Tatiana, Cardinal — sadsnake1, CC BY-NC-SA 4.0; California — Jerry S., CC BY-NC-SA 4.0. Nocturne and Tokens are original.
+- **Puzzles**: [Lichess puzzle database](https://database.lichess.org/#puzzles), CC0 (offline pack), and the public [Lichess puzzle API](https://lichess.org/api#tag/Puzzles) (live, by theme).
+- **Opening summaries**: [Wikipedia](https://en.wikipedia.org/) REST API, CC BY-SA.
 - **"Classic" pieces**: cburnett, GPLv2+.
 - **Libraries**: [chess.js](https://github.com/jhlywa/chess.js), React, idb, lz-string, Workbox.
 - **Fonts**: Manrope and JetBrains Mono, OFL.

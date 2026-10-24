@@ -1,10 +1,11 @@
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { gameInfo } from '../../chess/pgn';
 import { formatScore } from '../../engine/evalUtils';
 import { CLASS_LABEL } from '../../review/criticalMoments';
 import { CLASSIFICATION_ORDER, NEGATIVE_CLASSES, type MoveClassification } from '../../review/types';
 import { useApp, useController } from '../../state/context';
-import { REVIEW_STRENGTH, type ReviewStrength } from '../../state/settings';
+import { REVIEW_STRENGTH, type ReviewStrength, engineModeOf, maxThreads } from '../../state/settings';
+import { autoHashMb, autoThreads } from '../../engine/StockfishManager';
 import { ClassificationBadge, ClassificationIcon, CLASS_COLOR } from '../ClassificationBadge/ClassificationBadge';
 import { Icon } from '../common/Icon';
 import { revealBoard } from '../../utils/download';
@@ -124,6 +125,212 @@ function RetryCard() {
   );
 }
 
+
+const HASH_STEPS = [16, 32, 64, 128, 256, 512];
+function maxHashStep(): number {
+  const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  return mem !== undefined && mem < 4 ? 128 : mem !== undefined && mem >= 8 ? 512 : 256;
+}
+
+/** Slider that shows its value live but only commits (restarting the engine) once the user lets go. */
+function useCommitted(value: number, commit: (v: number) => void) {
+  const [draft, setDraft] = useState(value);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => setDraft(value), [value]);
+  const change = (v: number) => {
+    setDraft(v);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => commit(v), 450);
+  };
+  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+  return [draft, change] as const;
+}
+
+/** Compact engine configuration for reviews (Lichess-style): CPU threads, memory, review depth, engine lines. */
+function ReviewEngineConfig({ disabled }: { disabled: boolean }) {
+  const c = useController();
+  const eng = useApp((s) => s.settings.engine);
+  const strength = useApp((s) => s.settings.review.strength);
+  const info = useApp((s) => s.engine.info);
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem('nocturne64.reviewConfigOpen') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () => {
+    setOpen((o) => {
+      try {
+        localStorage.setItem('nocturne64.reviewConfigOpen', o ? '0' : '1');
+      } catch {
+        /* storage unavailable */
+      }
+      return !o;
+    });
+  };
+  const cores = maxThreads();
+  const multi = c.engine.supportsThreads;
+  const threadsNow = multi ? (eng.threads === 'auto' ? autoThreads() : eng.threads) : 1;
+  const hashNow = eng.hash === 'auto' ? autoHashMb() : eng.hash;
+  const hashMax = maxHashStep();
+  const hashSteps = HASH_STEPS.filter((h) => h <= hashMax);
+  const hashIdx = Math.max(0, hashSteps.findIndex((h) => h >= hashNow));
+
+  const [threads, setThreads] = useCommitted(threadsNow, (v) => c.updateSettings((s) => ({ ...s, engine: { ...s.engine, threads: v } })));
+  const [hashI, setHashI] = useCommitted(hashIdx, (i) => c.updateSettings((s) => ({ ...s, engine: { ...s.engine, hash: hashSteps[i] } })));
+  const [lines, setLines] = useCommitted(eng.multipv, (v) => c.updateSettings((s) => ({ ...s, engine: { ...s.engine, multipv: v } })));
+  const pct = (v: number, min: number, max: number) => `${max > min ? ((v - min) / (max - min)) * 100 : 100}%`;
+
+  return (
+    <div className={`rcfg ${open ? 'open' : ''}`}>
+      <button type="button" className="rcfg-head" aria-expanded={open} onClick={toggle}>
+        <Icon name="settings" size={15} />
+        <span className="rcfg-chips">
+          <span>{threads} CPU</span>
+          <span>{hashSteps[hashI] ?? hashNow} MB</span>
+          <span>{REVIEW_STRENGTH[strength].label}</span>
+          <span>{lines} lines</span>
+        </span>
+        <span className="rcfg-caret" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="rcfg-body">
+          <label className="rcfg-row">
+            <span className="rcfg-label">
+              Threads <em>{threads} / {cores}</em>
+            </span>
+            <input
+              type="range"
+              min={1}
+              max={multi ? cores : 1}
+              value={threads}
+              disabled={disabled || !multi}
+              style={{ ['--fill' as string]: pct(threads, 1, multi ? cores : 1) }}
+              onChange={(e) => setThreads(Number(e.target.value))}
+              aria-label="CPU threads"
+            />
+          </label>
+          {!multi && <p className="rcfg-note">This host isn't cross-origin isolated, so the engine runs single-threaded.</p>}
+          <label className="rcfg-row">
+            <span className="rcfg-label">
+              Memory <em>{hashSteps[hashI]} MB</em>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={hashSteps.length - 1}
+              step={1}
+              value={hashI}
+              disabled={disabled}
+              style={{ ['--fill' as string]: pct(hashI, 0, hashSteps.length - 1) }}
+              onChange={(e) => setHashI(Number(e.target.value))}
+              aria-label="Engine memory (hash)"
+            />
+          </label>
+          <label className="rcfg-row">
+            <span className="rcfg-label">
+              Lines <em>{lines}</em>
+            </span>
+            <input
+              type="range"
+              min={1}
+              max={5}
+              value={lines}
+              style={{ ['--fill' as string]: pct(lines, 1, 5) }}
+              onChange={(e) => setLines(Number(e.target.value))}
+              aria-label="Engine lines (MultiPV)"
+            />
+          </label>
+          <div className="rcfg-row">
+            <span className="rcfg-label">Depth</span>
+            <div className="rcfg-seg" role="radiogroup" aria-label="Review depth">
+              {(Object.keys(REVIEW_STRENGTH) as ReviewStrength[]).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={strength === k}
+                  className={strength === k ? 'active' : ''}
+                  disabled={disabled}
+                  onClick={() => c.updateSettings((s) => ({ ...s, review: { ...s.review, strength: k } }))}
+                  title={`Scan depth ${REVIEW_STRENGTH[k].quickDepth}, critical moves depth ${REVIEW_STRENGTH[k].deepDepth}`}
+                >
+                  {REVIEW_STRENGTH[k].label}
+                  <small>
+                    {REVIEW_STRENGTH[k].quickDepth}→{REVIEW_STRENGTH[k].deepDepth}
+                  </small>
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="rcfg-note">
+            {info ? `${info.name} · ${info.flavor.endsWith('-multi') ? 'multi-threaded' : 'single-threaded'} · ${info.threads}T · ${info.hashMb} MB` : 'Engine starting…'}
+            {disabled ? ' · locked during review' : ''}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Lite / Max engine switch shown at the top of the review panel on every screen size. */
+function EngineModeToggle({ reviewEngine }: { reviewEngine?: string }) {
+  const c = useController();
+  const mode = useApp((s) => engineModeOf(s.settings));
+  const running = useApp((s) => !!s.reviewProgress);
+  const status = useApp((s) => s.engine.status);
+  const flavor = useApp((s) => s.engine.info?.flavor);
+  const fellBack = mode === 'max' && status !== 'loading' && !!flavor && !flavor.startsWith('full');
+  const reviewMode = reviewEngine ? (/lite|asm/i.test(reviewEngine) ? 'lite' : 'max') : null;
+  return (
+    <div className="engine-mode-wrap">
+      <div className="engine-mode" role="radiogroup" aria-label="Review engine">
+        {(['lite', 'max'] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            role="radio"
+            aria-checked={mode === m}
+            className={`em-opt ${m} ${mode === m ? 'active' : ''}`}
+            disabled={running}
+            title={
+              running
+                ? 'Available when the review finishes'
+                : m === 'lite'
+                  ? 'Stockfish 19 Lite (1.7 MB net): fast reviews'
+                  : 'Stockfish 19 full NNUE, every CPU thread, larger hash, Thorough review depth'
+            }
+            onClick={() => c.setEngineMode(m)}
+          >
+            <Icon name={m === 'lite' ? 'bolt' : 'power'} size={16} />
+            <span>
+              <b>{m === 'lite' ? 'Lite' : 'Max'}</b>
+              <small>
+                {m === 'lite'
+                  ? 'Fast · light net'
+                  : mode === 'max' && status === 'loading'
+                    ? 'Loading…'
+                    : 'Strongest · full'}
+              </small>
+            </span>
+          </button>
+        ))}
+      </div>
+      <ReviewEngineConfig disabled={running} />
+      {fellBack && <p className="em-note">The full engine could not load on this device, so Lite is running instead.</p>}
+      {reviewMode && reviewMode !== mode && !running && (
+        <div className="em-note action">
+          <span>This review used {reviewMode === 'max' ? 'Max' : 'Lite'}.</span>
+          <button type="button" className="btn small" onClick={() => void c.startReview()}>
+            Re-run with {mode === 'max' ? 'Max' : 'Lite'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReviewPanelImpl() {
   const c = useController();
   const review = useApp((s) => s.review);
@@ -133,7 +340,6 @@ function ReviewPanelImpl() {
   const retry = useApp((s) => s.retry);
   const currentId = useApp((s) => s.currentId);
   const headers = useApp((s) => s.headers);
-  const strength = useApp((s) => s.settings.review.strength);
   const showKey = useApp((s) => s.settings.review.showKeyMoves);
   const moveCount = useApp((s) => Object.keys(s.tree.nodes).length - 1);
   const info = useMemo(() => gameInfo(headers), [headers]);
@@ -145,6 +351,7 @@ function ReviewPanelImpl() {
     const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
     return (
       <section className="panel review-panel" aria-label="Game review" aria-busy="true">
+        <EngineModeToggle />
         <div className="review-running">
           <div className="review-phase">
             <span className="phase-steps" aria-hidden="true">
@@ -175,6 +382,7 @@ function ReviewPanelImpl() {
   if (!review) {
     return (
       <section className="panel review-panel" aria-label="Game review">
+        <EngineModeToggle />
         <div className="review-cta">
           <div className="cta-art" aria-hidden="true">
             {(['brilliant', 'great', 'best', 'inaccuracy', 'mistake', 'blunder'] as MoveClassification[]).map((k) => (
@@ -186,23 +394,6 @@ function ReviewPanelImpl() {
             Stockfish analyzes every position on your device, then classifies each move, computes accuracy and finds the key moments. Mistakes become
             retry puzzles.
           </p>
-          <div className="seg" role="radiogroup" aria-label="Review strength">
-            {(Object.keys(REVIEW_STRENGTH) as ReviewStrength[]).map((k) => (
-              <button
-                key={k}
-                type="button"
-                role="radio"
-                aria-checked={strength === k}
-                className={strength === k ? 'active' : ''}
-                onClick={() => c.updateSettings((s) => ({ ...s, review: { ...s.review, strength: k } }))}
-              >
-                {REVIEW_STRENGTH[k].label}
-                <small>
-                  d{REVIEW_STRENGTH[k].quickDepth}→{REVIEW_STRENGTH[k].deepDepth}
-                </small>
-              </button>
-            ))}
-          </div>
           <button type="button" className="btn primary big" onClick={() => void c.startReview()} disabled={moveCount === 0}>
             <Icon name="star" /> Review game <kbd>R</kbd>
           </button>
@@ -219,6 +410,7 @@ function ReviewPanelImpl() {
 
   return (
     <section className="panel review-panel" aria-label="Game review">
+      <EngineModeToggle reviewEngine={review.engine} />
       {stale && (
         <div className="callout info">
           <span>New main-line moves were added after the review.</span>
