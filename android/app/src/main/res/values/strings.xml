@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Nocturne64</string>
+    <string name="title_activity_main">Nocturne64</string>
+    <string name="package_name">com.nocturne64.chess</string>
+    <string name="custom_url_scheme">com.nocturne64.chess</string>
+</resources>

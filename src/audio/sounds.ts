@@ -1,3 +1,4 @@
+import { hapticTap, isNative } from '../native';
 /**
  * Original board sounds, synthesized once per session into AudioBuffers (no audio files, no third-party samples).
  *
@@ -242,6 +243,7 @@ export function warmUpSounds(): void {
  */
 export function playSound(kind: SoundKind, volume = 0.7, delay = 0): void {
   if (volume <= 0) return;
+  if (isNative) setTimeout(hapticTap, delay * 1000);
   const c = audio();
   if (!c || !master || !wet) return;
   const src = c.createBufferSource();
