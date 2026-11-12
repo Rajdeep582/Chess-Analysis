@@ -1,0 +1,25 @@
+{
+  "appId": "com.nocturne64.chess",
+  "appName": "Nocturne64",
+  "webDir": "dist",
+  "backgroundColor": "#0f1116",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 600,
+      "launchAutoHide": true,
+      "launchFadeOutDuration": 250,
+      "backgroundColor": "#0f1116",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "DARK",
+      "backgroundColor": "#0f1116"
+    }
+  }
+}

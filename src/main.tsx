@@ -7,6 +7,9 @@ import App from './App';
 import { warmUpSounds } from './audio/sounds';
 
 warmUpSounds();
+import { initNative } from './native';
+
+void initNative();
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 function unsupported(): string | null {

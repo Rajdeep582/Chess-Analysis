@@ -4002,14 +4002,7 @@ body {
   transition: filter 0.2s ease-out;
 }
 
-.board.animated .piece:not(.ghost) {
-  animation: pieceIn 0.2s ease-out;
-}
-@keyframes pieceIn {
-  from {
-    opacity: 0;
-  }
-}
+/* piece entry fades are driven by WAAPI in ChessBoard.tsx (avoids a double fade on mount) */
 
 /* ==========================================================================
    No horizontal scrolling anywhere
@@ -7320,4 +7313,164 @@ select:focus-visible {
   .app-header.is-analysis .main-nav.top .mn-item {
     padding: 0 6px;
   }
+}
+
+/* ==========================================================================
+   Refinement layer — motion tokens, tactile controls, native-app feel
+   ========================================================================== */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  overscroll-behavior-y: none;
+  font-feature-settings: 'cv11', 'ss01';
+}
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+:where(button, a, [role='button'], input, select, textarea, summary) {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* buttons: consistent tactile press + soft focus ring */
+.btn,
+.icon-btn,
+.tool-btn,
+.seg button,
+.mn-item {
+  transition:
+    background-color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease,
+    color var(--dur-fast) ease,
+    box-shadow var(--dur) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.btn:active:not(:disabled),
+.icon-btn:active:not(:disabled),
+.tool-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.btn.primary {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset, 0 6px 16px -8px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.btn.primary:hover:not(:disabled) {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.3) inset, 0 10px 22px -10px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+.btn:focus-visible,
+.icon-btn:focus-visible,
+.tool-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* cards & panels: crisper edges, subtle depth */
+.card,
+.panel {
+  transition: border-color var(--dur) ease, box-shadow var(--dur) var(--ease-out);
+}
+
+/* move list: smooth current-move highlight */
+.mv {
+  transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+
+/* inputs */
+:where(input[type='text'], input[type='search'], input:not([type]), textarea, select) {
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur) var(--ease-out);
+}
+:where(input[type='text'], input[type='search'], input:not([type]), textarea, select):focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+/* ---------------------------------------------------------------- board finish */
+.board-frame {
+  contain: layout paint;
+  isolation: isolate;
+}
+.board {
+  contain: layout style;
+}
+.pieces {
+  contain: strict;
+}
+.sq {
+  contain: strict;
+}
+.sq.last::before,
+.sq.selected::before {
+  transition: background-color var(--dur) ease;
+}
+.sq.target::after {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.board.interactive .sq.target:hover::after {
+  transform: translate(-50%, -50%) scale(1.25);
+}
+.board.interactive .sq.target.capture:hover::after {
+  transform: translate(-50%, -50%) scale(1);
+  border-color: rgba(20, 24, 32, 0.42);
+}
+@media (hover: hover) {
+  .board.interactive:not(.dragging) .piece {
+    cursor: grab;
+  }
+}
+.board.dragging .piece:not(.lifted) {
+  pointer-events: none;
+}
+.board-marker {
+  animation: markerPop 0.32s var(--ease-spring);
+}
+@keyframes markerPop {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+.promotion {
+  animation: fadeIn var(--dur) ease-out;
+}
+.promotion-card {
+  animation: promoIn 0.26s var(--ease-out);
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes promoIn {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+
+/* ---------------------------------------------------------------- native shell (Capacitor / standalone PWA) */
+@media (display-mode: standalone) {
+  body {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  :where(input, textarea, [contenteditable], .pgn-text, pre, code) {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+}
+.native-app body,
+html.native-app {
+  overscroll-behavior: none;
+}
+html.native-app #root {
+  padding-top: env(safe-area-inset-top);
 }

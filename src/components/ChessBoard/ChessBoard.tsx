@@ -128,7 +128,12 @@ function ChessBoardImpl(props: ChessBoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
   const prevPieces = useRef<PieceOnBoard[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [drag, setDrag] = useState<{ from: string; x: number; y: number; moved: boolean } | null>(null);
+  // Drag state that drives rendering changes only (lift / target square). The pointer position
+  // itself lives in a ref and is applied to the dragged node in rAF — no React render per pointermove.
+  const [drag, setDrag] = useState<{ from: string; moved: boolean } | null>(null);
+  const [overSq, setOverSq] = useState<string | null>(null);
+  const dragPos = useRef<{ x: number; y: number; sx: number; sy: number; rect: DOMRect | null }>({ x: 0, y: 0, sx: 0, sy: 0, rect: null });
+  const dragRaf = useRef(0);
   const [promotion, setPromotion] = useState<{ from: string; to: string; color: Color } | null>(null);
   const [userArrows, setUserArrows] = useState<BoardArrow[]>([]);
   const [circles, setCircles] = useState<string[]>([]);
@@ -271,7 +276,8 @@ function ChessBoardImpl(props: ChessBoardProps) {
     [orientation],
   );
 
-  const pieceAt = useCallback((sq: string) => pieces.find((p) => p.sq === sq), [pieces]);
+  const bySquare = useMemo(() => new Map(pieces.map((p) => [p.sq, p])), [pieces]);
+  const pieceAt = useCallback((sq: string) => bySquare.get(sq), [bySquare]);
 
   const tryMove = useCallback(
     (from: string, to: string): boolean => {
@@ -289,8 +295,19 @@ function ChessBoardImpl(props: ChessBoardProps) {
     [chess, onMove, turn],
   );
 
-  // Square under a dragged piece (highlighted like a physical board's target square).
-  const overSq = drag?.moved ? squareFromPoint(drag.x, drag.y) : null;
+  const dragTransform = () => {
+    const { x, y, rect } = dragPos.current;
+    if (!rect) return '';
+    return `translate3d(${x - rect.left - rect.width / 16}px, ${y - rect.top - rect.height / 16}px, 0) scale(1.08)`;
+  };
+  const endDrag = () => {
+    cancelAnimationFrame(dragRaf.current);
+    dragRaf.current = 0;
+    dragPos.current.rect = null;
+    setDrag(null);
+    setOverSq(null);
+  };
+  useEffect(() => () => cancelAnimationFrame(dragRaf.current), []);
 
   const onPointerDown = (e: RPointerEvent<HTMLDivElement>) => {
     if (kbdNav) setKbdNav(false);
@@ -313,15 +330,33 @@ function ChessBoardImpl(props: ChessBoardProps) {
     }
     if (p && p.color === turn) {
       setSelected(sq);
-      setDrag({ from: sq, x: e.clientX, y: e.clientY, moved: false });
+      dragPos.current = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, rect: null };
+      setDrag({ from: sq, moved: false });
       (e.target as Element).setPointerCapture?.(e.pointerId);
     } else setSelected(null);
   };
 
   const onPointerMove = (e: RPointerEvent<HTMLDivElement>) => {
     if (!drag) return;
-    const moved = drag.moved || Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4;
-    setDrag({ ...drag, x: e.clientX, y: e.clientY, moved });
+    const pos = dragPos.current;
+    pos.x = e.clientX;
+    pos.y = e.clientY;
+    if (!drag.moved) {
+      if (Math.hypot(pos.x - pos.sx, pos.y - pos.sy) <= 4) return;
+      pos.rect = boardRef.current?.getBoundingClientRect() ?? null;
+      setDrag({ from: drag.from, moved: true });
+      setOverSq(squareFromPoint(pos.x, pos.y));
+      return;
+    }
+    if (dragRaf.current) return;
+    dragRaf.current = requestAnimationFrame(() => {
+      dragRaf.current = 0;
+      const p = bySquare.get(drag.from);
+      const el = p && pieceEls.current.get(p.id);
+      if (el) el.style.transform = dragTransform();
+      const over = squareFromPoint(pos.x, pos.y);
+      setOverSq((cur) => (cur === over ? cur : over));
+    });
   };
 
   const onPointerUp = (e: RPointerEvent<HTMLDivElement>) => {
@@ -339,10 +374,25 @@ function ChessBoardImpl(props: ChessBoardProps) {
     }
     if (!drag) return;
     const d = drag;
-    setDrag(null);
+    const liftedFrom = d.moved ? dragTransform() : '';
+    endDrag();
+    let ok = false;
     if (d.moved && sq && sq !== d.from) {
       dropped.current = sq;
-      tryMove(d.from, sq);
+      ok = tryMove(d.from, sq);
+      if (!ok) dropped.current = null;
+    }
+    // Illegal / cancelled drop: glide the piece back home instead of teleporting.
+    if (d.moved && !ok && animate && liftedFrom) {
+      const p = bySquare.get(d.from);
+      const el = p && pieceEls.current.get(p.id);
+      if (el && typeof el.animate === 'function') {
+        const [hx, hy] = sqXY(d.from, orientation);
+        el.animate([{ transform: liftedFrom, zIndex: 10 }, { transform: `translate3d(${hx * 100}%, ${hy * 100}%, 0)`, zIndex: 10 }], {
+          duration: 200,
+          easing: 'cubic-bezier(0.2, 0.9, 0.3, 1)',
+        }).id = 'move';
+      }
     }
   };
 
@@ -380,13 +430,11 @@ function ChessBoardImpl(props: ChessBoardProps) {
     return out;
   }, [orientation]);
 
-  // Only measured while dragging (avoids a forced layout on every render).
-  const boardRect = drag?.moved ? boardRef.current?.getBoundingClientRect() : undefined;
-  const allArrows = [...arrows, ...userArrows];
+  const allArrows = useMemo(() => (userArrows.length ? [...arrows, ...userArrows] : arrows), [arrows, userArrows]);
 
   return (
     <div
-      className={`board theme-${theme} ${animate ? 'animated' : ''} ${drag?.moved ? 'dragging' : ''}`}
+      className={`board theme-${theme}${animate ? ' animated' : ''}${interactive ? ' interactive' : ''}${drag?.moved ? ' dragging' : ''}`}
       ref={boardRef}
       role="grid"
       aria-label={ariaLabel ?? 'Chess board'}
@@ -395,7 +443,7 @@ function ChessBoardImpl(props: ChessBoardProps) {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={() => setDrag(null)}
+      onPointerCancel={endDrag}
       onContextMenu={(e) => e.preventDefault()}
     >
       {squares.map(({ sq, x, y, light }) => {
@@ -427,13 +475,9 @@ function ChessBoardImpl(props: ChessBoardProps) {
       <div className="pieces">
         {pieces.map((p) => {
           const [x, y] = sqXY(p.sq, orientation);
-          const dragging = drag?.moved && drag.from === p.sq && boardRect;
+          const dragging = !!(drag?.moved && drag.from === p.sq && dragPos.current.rect);
           const style: React.CSSProperties = dragging
-            ? {
-                transform: `translate(${drag!.x - boardRect!.left - boardRect!.width / 16}px, ${drag!.y - boardRect!.top - boardRect!.height / 16}px) scale(1.08)`,
-                transition: 'none',
-                zIndex: 10,
-              }
+            ? { transform: dragTransform(), transition: 'none', zIndex: 10 }
             : { transform: `translate3d(${x * 100}%, ${y * 100}%, 0)` };
           if (!dragging && dropped.current === p.sq) style.transition = 'none';
           return (
